@@ -1,7 +1,21 @@
 #!/usr/bin/env python3
 """
-quantize_yolo26n_pytorch.py  —  run INSIDE the Vitis AI 3.0 Docker container
+quantize_yolo26n_pytorch.py  —  SUPERSEDED, kept for reference only
 ============================================================================
+!! THIS SCRIPT CANNOT RUN. Use quantize_yolo26n_dpu.py instead. !!
+
+`build_float_model()` below does `from ultralytics import YOLO`, but the only
+conda env that has `pytorch_nndct` is `vitis-ai-pytorch` (Python 3.7.12), and
+ultralytics 8.4.71 — the only release that knows YOLO26 — requires Python 3.8+.
+So this script dies at import time, before reaching the quantizer, let alone
+the vai_c_xir gate. See 07-notes/M2B1_inspector_python_blocker.md.
+
+Replacement: quantize_yolo26n_dpu.py, which builds the graph from
+yolo26n_dpu.py (plain PyTorch, no ultralytics) and takes weights as a plain
+state_dict. Full procedure: ../RUNBOOK_M2B3.md
+
+Original docstring follows.
+----------------------------------------------------------------------------
 Docker image (pinned): xilinx/vitis-ai-pytorch-cpu:ubuntu2004-3.0.0.106
 Conda env (has vai_q_pytorch):  conda activate vitis-ai-pytorch
 

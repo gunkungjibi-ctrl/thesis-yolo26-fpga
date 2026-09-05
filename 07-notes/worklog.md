@@ -107,3 +107,24 @@
 - **README.md เขียนใหม่** (เดิมค้าง 11 ส.ค. ยังเขียนว่ารอบอร์ด/VART ยังไม่เริ่ม): สถานะ 17/20, ตารางผลวัด, ข้อค้นพบ 3 ข้อ, boot image = PetaLinux, arch B4096 ยืนยันแล้ว, ตัด warning เรื่อง artifact ค้างใน WSL (P0 ปิดแล้ว)
 - สำรองไฟล์เดิมไว้ `.bak-20260823` ทั้ง 3 ไฟล์ (ไม่ลบอะไร)
 - ทำต่อ: **M2-B3** รัน `vai_c_xir` กับ yolo26n จริง → ปิดคำถาม Track B
+
+## 2026-09-05 — ปลดล็อก blocker M2-B3 (ทำจาก cloud session, ยังไม่ได้รัน vai_c_xir)
+
+**บริบทเครื่อง:** session นี้รันบน cloud container ของ Anthropic (Linux x86_64, 4 core, RAM 15GB, disk 30GB) ไม่ใช่เดสก์ท็อปและไม่ใช่บอร์ด
+
+- **ดึง image Vitis AI ไม่ได้** — dockerd รันได้ แต่ `docker pull xilinx/vitis-ai-pytorch-cpu:ubuntu2004-3.0.0.106` ตายที่ blob:
+  `production.cloudfront.docker.com:443 — 403 (policy denial)` (manifest ผ่าน, blob โดนบล็อก) → **รัน `vai_c_xir` ที่นี่ไม่ได้** ต้องรันบนเครื่องที่มี Docker + image
+- **แต่เจอว่า blocker ตัวจริงไม่ใช่เรื่อง docker** — `quantize_yolo26n_pytorch.py` เรียก `from ultralytics import YOLO` ซึ่ง import ไม่ได้ใน env py3.7 ที่มี nndct → **ต่อให้เปิดคอนเทนเนอร์บนเดสก์ท็อปตอนนี้ก็ตายก่อนถึง gate** (คือ blocker ที่จดไว้ตั้งแต่ 15 ส.ค. และยังไม่เคยแก้)
+- **แก้ด้วยการตัด ultralytics ออกจากคอนเทนเนอร์ทั้งหมด** → เขียน `quantize/yolo26n_dpu.py`: กราฟ YOLO26n เป็น PyTorch ล้วน
+  - syntax ผ่าน `ast.parse(feature_version=(3,7))` · ใช้เฉพาะ op ที่มีใน torch 1.12 · ชื่อ module ตรง ultralytics เป๊ะเพื่อให้ state_dict โหลด `strict=True` ได้ 1:1
+  - **เขียนด้วย slicing แทน `chunk`/`split` ตั้งแต่ต้น** → ตัดปัญหา `XIR don't support multi-outputs op` ที่ทำ Track A ล้ม. ตรวจ traced graph แล้ว **ไม่มี** `aten::chunk`/`split`/`split_with_sizes`/`unbind` เหลือเลย
+  - เก็บ attention 2 จุดไว้ครบตามเดิม — มันคือตัวที่กำลังทดสอบ ไม่ไปแก้
+- **พิสูจน์ว่ากราฟตรงจริง** (`export_yolo26n_state_dict.py` ทำ check นี้ทุกครั้งที่รัน ไม่ตรง = abort):
+  **708 tensors โหลดครบ · `max|diff|` เทียบ ultralytics = `3.8e-06`** (noise float32) ทั้ง 3 หัว
+- **ยืนยัน M2-B1 จาก source โดยตรง** (ไม่ใช่แค่ชื่อ node ใน ONNX): `model.10` = `C2PSA` → `PSABlock.attn`; `model.22` = `C3k2(..., attn=True)` → `Sequential(Bottleneck, PSABlock)` → `.attn` ตรงกับ path `/model.22/m.0/m.0.1/attn` เป๊ะ
+- **🔴 ข้อค้นพบใหม่ที่ ONNX histogram ไม่ได้ชี้: YOLO26 ไม่มี DFL** — `yolo26.yaml` ตั้ง `reg_max: 1` → `Detect.dfl = nn.Identity()`
+  → single-class = **5 ch/หัว** ไม่ใช่ 65 ch แบบ Track A → **`yolo_dpu_detect.py` ใช้กับ YOLO26n ไม่ได้ทันที ต้องแก้ decoder** (แต่ decode จะเบาลงมาก = ดีต่อคอขวดที่เป็น PS-bound)
+- **หมายเหตุ 2 หัว:** `end2end: True` ทำให้มีทั้ง `cv2/cv3` (o2m, คู่กับ NMS) และ `one2one_cv2/cv3` (NMS-free). flow นี้ default เป็น o2m ให้เทียบ Track A ได้ตรง · เลือกอีกหัวด้วย `--use_one2one`
+- dry-run ทั้ง flow ด้วย nndct stub → calib loop + jit.trace + export path ผ่านหมด ไม่มีบั๊ก
+- เขียน `RUNBOOK_M2B3.md` (6 ขั้น + ตารางตัดสิน) · เพิ่ม parse `DPU subgraph number N` อัตโนมัติใน `compile_yolo26n.sh` · เคลียร์คอมเมนต์ B3136/B4096 ที่ค้างใน compile script (P1 ปิดไปแล้ว) · ใส่หัวเตือนใน `quantize_yolo26n_pytorch.py` ว่าใช้ไม่ได้
+- **ทำต่อ:** รัน `RUNBOOK_M2B3.md` บนเดสก์ท็อป (ต้องใช้ `yolo26n_leaky_pkg_ft.pt` ตัวจริง ซึ่ง `.gitignore` กันไว้ไม่อยู่ใน repo) → ได้ `vai_c_xir` log = ปิด M2-B3

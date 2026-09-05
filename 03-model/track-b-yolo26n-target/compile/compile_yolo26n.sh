@@ -5,7 +5,7 @@
 # vai_q_pytorch flow) into a DPU-deployable xmodel for the Kria KV260, and
 # prints the subgraph partition that is the Track B gate.
 #
-# PREREQUISITE: quantize_yolo26n_pytorch.py was run with --quant_mode test
+# PREREQUISITE: quantize_yolo26n_dpu.py was run with --quant_mode test
 #               --deploy, producing quantize_result/YOLO26nBackboneHead_int.xmodel
 #               (the wrapper class name determines the filename — check it).
 set -euo pipefail
@@ -18,13 +18,13 @@ INT_XMODEL="${INT_XMODEL:-quantize_result/YOLO26nBackboneHead_int.xmodel}"
 NET_NAME="yolo26n_kv260"
 
 # ---- DPU target ------------------------------------------------------------
-# !! UNRESOLVED CONFLICT — see 03-model/README.md issue #1 !!
-#   Phase 0 scripts say  DPUCZDX8G_ISA1_B3136
-#   Handover notes say   DPUCZDX8G_ISA1_B4096 (fingerprint 0x101000056010407)
-#   platform_selection.docx says KV260 fits B4096
-# Resolve this from the real vai_c_xir log BEFORE trusting any output here.
-# Whatever you pick MUST match TARGET in quantize_yolo26n_pytorch.py — the
-# quantizer is hardware-aware, so a mismatch is not fixable at compile time.
+# RESOLVED in P1 (07-notes/P1_arch_and_identity_resolution.md): the real arch is
+# B4096, confirmed from three sources (the phase-0 vai_c_xir log, meta.json, and
+# the KV260 arch.json) and later by `xdputil query` on the board itself
+# (fingerprint 0x101000056010407). The B3136 in the old phase-0 scripts was a
+# stale comment from an inspect dry-run.
+# This MUST match TARGET in quantize_yolo26n_dpu.py — the quantizer is
+# hardware-aware, so a mismatch is not fixable at compile time.
 DPU_TARGET="${DPU_TARGET:-KV260}"
 ARCH="${ARCH:-/opt/vitis_ai/compiler/arch/DPUCZDX8G/${DPU_TARGET}/arch.json}"
 
@@ -46,6 +46,25 @@ vai_c_xir \
 
 echo
 echo "================ TRACK B GATE — read the log above ================"
+
+# Pull the verdict out of the log rather than leaving it to the eye. The log
+# line is "DPU subgraph number N"; N is the whole answer for M2-B3.
+LOG="vai_c_xir_${NET_NAME}.log"
+SUBGRAPHS="$(grep -oE 'DPU subgraph number[[:space:]]+[0-9]+' "$LOG" | grep -oE '[0-9]+$' | tail -1 || true)"
+if [ -n "$SUBGRAPHS" ]; then
+  echo "PARSED: DPU subgraph number = ${SUBGRAPHS}"
+  if [ "$SUBGRAPHS" = "1" ]; then
+    echo "VERDICT: PASS — single DPU subgraph."
+  else
+    echo "VERDICT: PARTITIONED into ${SUBGRAPHS} DPU subgraphs."
+    echo "  Expected if the attention sites (model.10 C2PSA, model.22 C3k2 attn=True)"
+    echo "  did not map — that is the M2-B1 prediction, now measured rather than inferred."
+  fi
+else
+  echo "VERDICT: compiler produced no subgraph count — read the log for the error."
+fi
+
+echo
 echo "PASS = compiler reports exactly 1 DPU subgraph (kernel count: DPU=1)."
 echo "       Anything landing on CPU shows as extra non-DPU subgraphs."
 echo

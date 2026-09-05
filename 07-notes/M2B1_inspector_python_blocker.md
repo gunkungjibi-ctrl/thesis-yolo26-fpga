@@ -2,6 +2,28 @@
 
 วันที่ 2026-08-15 · ระหว่างพยายามรัน hardware-aware Inspector บน YOLO26n
 
+> ## ✅ ปิดแล้ว 2026-09-05 — ดู `03-model/track-b-yolo26n-target/RUNBOOK_M2B3.md`
+>
+> **ทางที่ใช้จริง = ทางเลือกที่ 4 ซึ่งตอนเขียนโน้ตนี้ยังไม่ได้คิดถึง: ตัด ultralytics ออกจากคอนเทนเนอร์ทั้งหมด**
+>
+> เขียนกราฟ YOLO26n ใหม่เป็น PyTorch ล้วนที่ `quantize/yolo26n_dpu.py` — syntax Python 3.7,
+> ใช้เฉพาะ op ที่มีใน torch 1.12, ไม่ import ultralytics เลย → import ได้ใน env `vitis-ai-pytorch` ตรงๆ
+> น้ำหนักส่งเข้าเป็น **plain state_dict** (ไม่ใช่ pickle ที่มีคลาส ultralytics ฝังอยู่ ซึ่ง torch 1.12 อ่านไม่ได้)
+>
+> **หลักประกันว่ากราฟไม่เพี้ยน:** `export_yolo26n_state_dict.py` โหลด state_dict แบบ `strict`
+> แล้วเทียบ output กับ ultralytics ทุกครั้งที่รัน ถ้าไม่ตรงจะ abort
+> ผลตรวจ: **708 tensors ตรงครบ · `max|diff| = 3.8e-06`** (= noise ของ float32)
+>
+> **ทำไมไม่เลือกทางที่ 1–3 ที่จดไว้:**
+> - ทางที่ 1 (ONNX op histogram) — ทำไปแล้วใน M2-B1 และตอบคำถามได้ระดับหนึ่ง **แต่ไม่ใช่ gate** เพราะ gate คือ `vai_c_xir` ซึ่งต้องมี `_int.xmodel` จาก nndct
+> - ทางที่ 2 (Vitis AI 3.5) — ยังไม่แนะนำ เหตุผลเดิม (ไม่มี KV260 prebuilt)
+> - ทางที่ 3 (ลง nndct ใน py3.9) — เป็นไปได้ต่ำเหมือนที่ประเมินไว้
+>
+> **สิ่งที่พบเพิ่มระหว่างทาง:** ต่อให้ patch walrus 5 บรรทัดให้ ultralytics import ได้บน py3.7
+> (สแกนแล้วโค้ดใน `ultralytics/nn/` สะอาด py3.7 100% ตัวที่ติดอยู่ที่ `utils/` 5 ไฟล์)
+> ก็ยังเสี่ยงพังกับ **torch 1.12** อยู่ดี (เช่น `torch.load(weights_only=)` ที่เพิ่งมีใน torch 1.13)
+> การเขียนกราฟเองจึงคุมความเสี่ยงได้ดีกว่า และได้ผลพลอยได้คือตัดปัญหา `chunk`/`split` ไปในตัว
+
 ## ปัญหา
 รัน `quantize_yolo26n_pytorch.py --inspect` ไม่ได้ เพราะ **ต้องมี 2 แพ็กเกจที่ต้องการ Python คนละเวอร์ชัน**:
 

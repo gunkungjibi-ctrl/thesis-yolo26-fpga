@@ -38,3 +38,43 @@ SiLU→LeakyReLU: แทนครบ (0 SiLU / 105+ LeakyReLU)
 3. **เขียนเป็น contribution** — "YOLO26 ติด DPUCZDX8G ตรง attention MatMul+Softmax กลางกราฟ" คือองค์ความรู้ที่จับต้องได้
 
 **กติกาสำคัญ:** histogram นี้เป็น advisory. gate จริงยังคือ `vai_c_xir` log — ควรลอง compile จริงเพื่อยืนยันว่าตัดเป็นกี่ subgraph (ยืนยัน mechanism ข้างบน)
+
+---
+
+## ภาคผนวก (2026-09-05) — ยืนยันจาก source ของโมเดล ไม่ใช่แค่ ONNX node name
+
+ตอนเตรียม M2-B3 ได้ introspect โมเดลที่ ultralytics build จริง (`yolo26n.yaml`, scale n) → ยืนยันข้อสรุปข้างบนครบ และได้รายละเอียดเพิ่ม
+
+### attention 2 จุด — ยืนยันตรงกับที่อ่านจาก ONNX
+
+| เลเยอร์ | โมดูลจริง | ที่มาของ attention |
+|---|---|---|
+| `model.10` | `C2PSA(256, 256, n=1)` | `.m[0]` = `PSABlock` → `.attn` = `Attention(dim=128, heads=2, key_dim=32, head_dim=64)` |
+| `model.22` | `C3k2(384, 256, n=1, c3k=True, e=0.5, **attn=True**)` | `.m[0]` = `Sequential(Bottleneck, PSABlock)` → `.m[0][1].attn` = `Attention(dim=128, heads=2, key_dim=32, head_dim=64)` |
+
+`model.22` มี attention เพราะ arg ตัวที่ 4 ใน yaml (`[-1, 1, C3k2, [1024, True, 0.5, True]]`) map เข้า
+`C3k2.__init__(..., c3k=True, e=0.5, attn=True)` — **ไม่ใช่ C3k2 ธรรมดา** ตรงกับ path `/model.22/m.0/m.0.1/attn` ที่เจอใน ONNX เป๊ะ
+
+source ของ `Attention.forward` ยืนยัน mechanism: `q.transpose(-2,-1) @ k` → `* scale` → `.softmax(dim=-1)` → `v @ attn.transpose(-2,-1)`
+= MatMul(data×data) → Softmax → MatMul(data×data) ตามที่วิเคราะห์ไว้
+
+### 🔴 ข้อค้นพบใหม่ที่ ONNX histogram ไม่ได้ชี้: **YOLO26 ไม่มี DFL**
+
+`yolo26.yaml` ตั้ง `reg_max: 1` → `Detect.dfl = nn.Identity()`
+
+| | Track A (YOLOv8n) | Track B (YOLO26n) |
+|---|---|---|
+| `reg_max` | 16 | **1** |
+| channel ต่อหัว (single class) | 4×16 + 1 = **65** | 4×1 + 1 = **5** |
+| decode ฝั่ง PS | softmax 16 bin ต่อด้าน × arange | **ไม่มี DFL** — อ่าน l,t,r,b ตรงๆ |
+
+**ผลกระทบ:** `04-deploy/board/yolo_dpu_detect.py` (เขียนไว้สำหรับ 65 ch + DFL) **ใช้กับ YOLO26n ไม่ได้ทันที** ต้องแก้ decoder
+แต่เป็นข่าวดีเชิง performance — ตัด softmax+matmul ต่อ anchor ออกจาก PS ซึ่งเป็นฝั่งที่เป็นคอขวดอยู่แล้ว (preproc+decode = 84% ของ pipeline)
+
+### หมายเหตุ: YOLO26 มี 2 หัว
+
+`end2end: True` ใน yaml ทำให้ `Detect` สร้าง `one2one_cv2/one2one_cv3` เป็น deepcopy ของ `cv2/cv3`
+- **`cv2/cv3`** = one-to-many ใช้คู่กับ NMS → **flow ปัจจุบันเลือกอันนี้** (ให้เทียบกับ Track A ได้ตรงๆ, NMS อยู่บน PS เหมือนกัน)
+- **`one2one_cv2/cv3`** = NMS-free branch → เลือกได้ด้วย `--use_one2one`
+
+การตั้ง `end2end=False` ตอน export (ที่ทำใน M2-B1) = เลือกเดินหัว o2m ซึ่งเป็นเหตุผลที่ TopK/GatherElements หายไป — ตรงกับที่สรุปไว้
