@@ -1,0 +1,63 @@
+# Real-Time Video-Based Object Counting on FPGA Using YOLO26
+
+Senior thesis / capstone project · อัปเดต 11 ส.ค. 2026
+
+## สถานะปัจจุบัน
+
+| งาน | สถานะ |
+|---|---|
+| Platform selection (KV260) | ✅ เสร็จ — `01-docs/platform_selection.docx` |
+| **Phase 0** — host quantize + compile | ✅ ผ่านแล้ว **ด้วย YOLOv8n** (`DPU subgraph number 1`) |
+| **Track B** — YOLO26n compile feasibility | ⏳ ยังไม่ผ่าน gate — งานหลักถัดไป |
+| GPU baseline (งาน Phase 3 ที่ดึงมาทำล่วงหน้า) | ✅ เสร็จ — FP32 คู่ (real-time + peak) |
+| **Phase 1** — board bring-up | ⏳ **รอบอร์ด KV260** |
+| VART C++ host code | ⏳ ยังไม่เริ่ม — pre-staging น้ำหนักสูงสุด |
+| Counting ground-truth dataset | ⏳ ยังไม่เริ่ม — architecture ล็อกแล้ว |
+
+## Target platform
+- **Board:** AMD Kria KV260 Vision AI Starter Kit — Zynq UltraScale+ MPSoC
+- **Detection:** DPUCZDX8G IP บน programmable logic (PL) — ⚠️ B3136 vs B4096 **ยังขัดกัน** ดู `03-model/README.md`
+- **Tracking / counting:** Arm Cortex-A53 (PS) — นับ object ที่ข้ามเส้น (tracking-based line-crossing)
+- **Toolchain:** Vitis (dev env: fabric + Arm + AI Engine) / Vitis AI 3.0 (stack เร่ง AI inference)
+- **Docker (pinned):** `xilinx/vitis-ai-pytorch-cpu:ubuntu2004-3.0.0.106` — **ห้ามใช้ `:latest`** (เป็น 3.5 ซึ่งไม่มี KV260 prebuilt + board_setup/mpsoc)
+- **Boot image:** Ubuntu for Kria (ไม่ใช่ Petalinux)
+- **Runtime:** VART native C++ (ไม่ใช่ PYNQ)
+
+## Pipeline
+```
+train/export → quantize → compile (.xmodel) → deploy
+```
+ห้ามข้ามขั้น compile — `vai_c_xir` log คือ gate เดียวที่นับ ไม่ใช่ op histogram หรือ Inspector
+
+## กลยุทธ์โมเดล: เดินสองเคสขนานกัน
+
+| | **Track A — YOLOv8n** | **Track B — YOLO26n** |
+|---|---|---|
+| บทบาท | baseline ที่พิสูจน์แล้ว / safety net | โมเดลเป้าหมายตามชื่อโครงงาน |
+| Phase 0 gate | ✅ ผ่าน | ⏳ ยังไม่ผ่าน |
+| ความเสี่ยง | ต่ำ (prior work เยอะ) | สูง (NMS-free head, ไม่อยู่ใน Model Zoo) |
+
+Track A ทำให้โครงงาน**จบได้แน่นอน** · Track B คือส่วนที่เพิ่มคุณค่าเชิงวิชาการ
+**ถ้า Track B ล้ม ผลนั้นยังเป็น contribution** — องค์ความรู้ว่า YOLO26 ติด op ไหนบน DPUCZDX8G เขียนเข้าเล่มได้เต็ม ๆ ไม่ใช่งานเสียเปล่า
+รายละเอียด + เงื่อนไขตัดสิน: `03-model/README.md`
+
+## Contribution
+- **Primary:** ระบบนับวัตถุ real-time บน heterogeneous FPGA SoC + ผลวัดเชิงประจักษ์ + องค์ความรู้ข้อจำกัดการ deploy YOLO โมเดลใหม่
+- **Optional extension:** custom accelerator สำหรับ bottleneck layer — ทำต่อเมื่อระบบฐานทำงานได้และ profiling ระบุ bottleneck แล้ว **ไม่ผูกเป็นเงื่อนไขจบโปรเจค**
+
+## Folder map
+| Folder | ใช้ทำอะไร |
+|---|---|
+| `00-admin/` | timeline, milestone, แผน pre-staging, เอกสารส่งอาจารย์ |
+| `01-docs/` | รายงาน, architecture, platform selection |
+| `02-dataset/` | detection dataset / counting ground-truth / calib frames |
+| `03-model/` | **Track A + Track B** — export → quantize → compile |
+| `04-deploy/` | VART C++ host code (PS), tracking/counting, boot image |
+| `05-benchmarks/` | GPU baseline + ผลวัดบนบอร์ด |
+| `06-references/` | เปเปอร์, AMD docs |
+| `07-notes/` | worklog, session summary, บั๊กที่เจอ |
+| `08-figures/` | รูป/ไดอะแกรม |
+
+## ⚠️ เรื่องด่วนที่สุดตอนนี้
+artifact จริง (`.xmodel`, `vai_c_xir_*.log`, `results_fp32_final.json`, `calib_images/`) **ยังอยู่ใน WSL `~/thesis/` ที่เดียว**
+WSL `.vhdx` เคยพังมาแล้วหนึ่งรอบจาก Windows C: เต็ม → หลักฐานเข้าเล่มอาจหายทั้งหมด **copy ออกมาก่อนทำอย่างอื่น**

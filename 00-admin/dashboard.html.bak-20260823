@@ -1,0 +1,511 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>YOLO26 × KV260 — PM Dashboard</title>
+<style>
+  :root{
+    --bg:#EDF1F1; --surface:#FFFFFF; --surface-2:#F5F8F8;
+    --ink:#121A1C; --ink-2:#47565A; --muted:#7B8A8E; --line:#DBE3E3;
+    --accent:#0E8C82; --accent-ink:#0A6B63; --accent-soft:#DCEEEC;
+    --done:#2E9E5B; --active:#C9891F; --blocked:#5577A0; --todo:#9AA7AB;
+    --done-soft:#E1F1E7; --active-soft:#F6ECD6; --blocked-soft:#E4ECF4; --todo-soft:#EDF1F1;
+    --risk-hi:#C0533A; --risk-md:#C9891F; --risk-lo:#4F8A6A;
+    --shadow:0 1px 2px rgba(16,30,32,.05), 0 8px 24px -12px rgba(16,30,32,.18);
+    --font-sans:"Noto Sans Thai","Leelawadee UI","Sarabun",system-ui,-apple-system,"Segoe UI",sans-serif;
+    --font-mono:ui-monospace,"Cascadia Code","JetBrains Mono",Consolas,monospace;
+    --r:14px;
+  }
+  @media (prefers-color-scheme:dark){
+    :root{
+      --bg:#0B1012; --surface:#121A1D; --surface-2:#182327;
+      --ink:#E7EEEE; --ink-2:#A6B5B8; --muted:#6E7E82; --line:#243231;
+      --accent:#2CC2B4; --accent-ink:#57DACC; --accent-soft:#123632;
+      --done:#46C67C; --active:#E4B058; --blocked:#82A8CE; --todo:#5C6B6F;
+      --done-soft:#12291C; --active-soft:#2C2412; --blocked-soft:#122130; --todo-soft:#1A2427;
+      --risk-hi:#E0745A; --risk-md:#E4B058; --risk-lo:#7FB394;
+      --shadow:0 1px 2px rgba(0,0,0,.3), 0 10px 30px -14px rgba(0,0,0,.6);
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#0B1012; --surface:#121A1D; --surface-2:#182327;
+    --ink:#E7EEEE; --ink-2:#A6B5B8; --muted:#6E7E82; --line:#243231;
+    --accent:#2CC2B4; --accent-ink:#57DACC; --accent-soft:#123632;
+    --done:#46C67C; --active:#E4B058; --blocked:#82A8CE; --todo:#5C6B6F;
+    --done-soft:#12291C; --active-soft:#2C2412; --blocked-soft:#122130; --todo-soft:#1A2427;
+    --risk-hi:#E0745A; --risk-md:#E4B058; --risk-lo:#7FB394;
+    --shadow:0 1px 2px rgba(0,0,0,.3), 0 10px 30px -14px rgba(0,0,0,.6);
+  }
+  :root[data-theme="light"]{
+    --bg:#EDF1F1; --surface:#FFFFFF; --surface-2:#F5F8F8;
+    --ink:#121A1C; --ink-2:#47565A; --muted:#7B8A8E; --line:#DBE3E3;
+    --accent:#0E8C82; --accent-ink:#0A6B63; --accent-soft:#DCEEEC;
+    --done:#2E9E5B; --active:#C9891F; --blocked:#5577A0; --todo:#9AA7AB;
+    --done-soft:#E1F1E7; --active-soft:#F6ECD6; --blocked-soft:#E4ECF4; --todo-soft:#EDF1F1;
+    --risk-hi:#C0533A; --risk-md:#C9891F; --risk-lo:#4F8A6A;
+    --shadow:0 1px 2px rgba(16,30,32,.05), 0 8px 24px -12px rgba(16,30,32,.18);
+  }
+
+  *{box-sizing:border-box}
+  html{-webkit-text-size-adjust:100%}
+  body{
+    margin:0; background:var(--bg); color:var(--ink);
+    font-family:var(--font-sans); line-height:1.5;
+    font-feature-settings:"tnum";
+    -webkit-font-smoothing:antialiased;
+  }
+  .wrap{max-width:1240px; margin:0 auto; padding:22px clamp(14px,3vw,30px) 60px}
+
+  /* ---- top bar ---- */
+  .topbar{
+    display:flex; flex-wrap:wrap; gap:16px 20px; align-items:flex-end;
+    justify-content:space-between; padding-bottom:18px; margin-bottom:22px;
+    border-bottom:1px solid var(--line);
+  }
+  .eyebrow{
+    font-family:var(--font-mono); font-size:11px; letter-spacing:.16em;
+    text-transform:uppercase; color:var(--accent-ink); font-weight:600;
+    display:flex; align-items:center; gap:8px;
+  }
+  .eyebrow .dot{width:7px;height:7px;border-radius:50%;background:var(--accent);box-shadow:0 0 0 4px var(--accent-soft)}
+  h1{font-size:clamp(20px,2.5vw,27px); line-height:1.18; margin:.35em 0 .2em; letter-spacing:-.01em; text-wrap:balance; max-width:22ch}
+  .sub{color:var(--ink-2); font-size:13.5px; max-width:60ch}
+  .topmeta{display:flex; flex-direction:column; gap:10px; align-items:flex-end}
+  .statuspill{
+    display:inline-flex; align-items:center; gap:9px; padding:8px 14px;
+    border-radius:999px; background:var(--surface); border:1px solid var(--line);
+    font-size:12.5px; font-weight:600; box-shadow:var(--shadow);
+  }
+  .statuspill b{color:var(--blocked)}
+  .pulse{width:9px;height:9px;border-radius:50%;background:var(--blocked);position:relative}
+  .pulse::after{content:"";position:absolute;inset:-4px;border-radius:50%;border:2px solid var(--blocked);opacity:.5;animation:p 2.2s ease-out infinite}
+  @keyframes p{0%{transform:scale(.6);opacity:.6}100%{transform:scale(1.7);opacity:0}}
+  @media (prefers-reduced-motion:reduce){.pulse::after{animation:none}}
+  .themebtn{
+    background:var(--surface-2); border:1px solid var(--line); color:var(--ink-2);
+    border-radius:999px; padding:6px 13px; font:inherit; font-size:12px; cursor:pointer;
+  }
+  .themebtn:hover{color:var(--ink)}
+  .themebtn:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+  /* ---- generic card ---- */
+  .card{background:var(--surface); border:1px solid var(--line); border-radius:var(--r); box-shadow:var(--shadow)}
+  .card-h{display:flex; align-items:baseline; justify-content:space-between; gap:12px; padding:16px 18px 0}
+  .card-h h2{font-size:15px; margin:0; letter-spacing:-.01em}
+  .card-h .note{font-size:11.5px; color:var(--muted); font-family:var(--font-mono)}
+
+  /* ---- KPI row ---- */
+  .kpis{display:grid; grid-template-columns:repeat(6,1fr); gap:14px; margin-bottom:22px}
+  @media (max-width:940px){.kpis{grid-template-columns:repeat(3,1fr)}}
+  @media (max-width:560px){.kpis{grid-template-columns:repeat(2,1fr)}}
+  .kpi{padding:15px 16px; display:flex; flex-direction:column; gap:3px; position:relative; overflow:hidden}
+  .kpi .lab{font-size:11.5px; color:var(--ink-2); font-weight:600; letter-spacing:.01em}
+  .kpi .val{font-size:26px; font-weight:700; letter-spacing:-.02em; line-height:1.05; font-variant-numeric:tabular-nums}
+  .kpi .val small{font-size:14px; font-weight:600; color:var(--muted)}
+  .kpi .foot{font-size:11px; color:var(--muted); font-family:var(--font-mono)}
+  .kpi .stripe{position:absolute; left:0; top:0; bottom:0; width:4px}
+  .kpi.ring-kpi{grid-column:span 1}
+  .ringwrap{display:flex; align-items:center; gap:13px}
+  .ringwrap .ringtxt{display:flex;flex-direction:column;gap:2px}
+  .badge{display:inline-flex; align-items:center; gap:6px; align-self:flex-start; padding:3px 9px; border-radius:6px; font-size:11px; font-weight:700; margin-top:2px}
+  .b-done{background:var(--done-soft); color:var(--done)}
+  .b-active{background:var(--active-soft); color:var(--active)}
+  .b-blocked{background:var(--blocked-soft); color:var(--blocked)}
+
+  /* ---- main grid ---- */
+  .grid{display:grid; grid-template-columns:1.5fr 1fr; gap:18px; align-items:start}
+  @media (max-width:940px){.grid{grid-template-columns:1fr}}
+
+  /* ---- roadmap ---- */
+  .rgroup{padding:6px 18px 14px}
+  .rgroup-h{display:flex;align-items:center;gap:9px; font-size:12px; font-weight:700; letter-spacing:.02em; text-transform:uppercase; color:var(--ink-2); margin:16px 0 9px}
+  .rgroup-h .tag{font-family:var(--font-mono); font-size:10.5px; font-weight:600; padding:2px 7px; border-radius:5px; letter-spacing:0; text-transform:none}
+  .tag.done{background:var(--done-soft);color:var(--done)}
+  .tag.active{background:var(--active-soft);color:var(--active)}
+  .tag.blocked{background:var(--blocked-soft);color:var(--blocked)}
+  .mitem{display:grid; grid-template-columns:auto auto 1fr; gap:11px; align-items:start; padding:9px 0; border-top:1px solid var(--line)}
+  .rgroup-h + .mitem{border-top:none}
+  .mid{font-family:var(--font-mono); font-size:11px; font-weight:700; color:var(--ink-2); padding:3px 7px; border-radius:6px; background:var(--surface-2); white-space:nowrap; min-width:52px; text-align:center}
+  .mstate{width:18px;height:18px;border-radius:50%; margin-top:1px; flex:none; display:grid; place-items:center; font-size:11px; font-weight:800; color:#fff}
+  .s-done{background:var(--done)}
+  .s-active{background:var(--active)}
+  .s-blocked{background:var(--blocked)}
+  .s-todo{background:transparent; border:2px solid var(--todo)}
+  .mbody .mt{font-size:13.5px; font-weight:600; line-height:1.35}
+  .mbody .mg{font-size:11.5px; color:var(--muted); font-family:var(--font-mono); margin-top:1px; line-height:1.4}
+  .mbody .mg.thai{font-family:var(--font-sans)}
+
+  /* ---- track cards ---- */
+  .tracks{display:flex; flex-direction:column; gap:12px; padding:14px 16px 16px}
+  .track{border:1px solid var(--line); border-radius:11px; padding:13px 14px; background:var(--surface-2)}
+  .track-h{display:flex; align-items:center; justify-content:space-between; gap:10px}
+  .track-h .tn{font-weight:700; font-size:14px; display:flex; align-items:center; gap:8px}
+  .track-h .tn .k{font-family:var(--font-mono); font-size:10.5px; background:var(--surface); border:1px solid var(--line); padding:2px 6px; border-radius:5px; color:var(--ink-2)}
+  .track p{margin:8px 0 0; font-size:12.5px; color:var(--ink-2)}
+  .track .mono{font-family:var(--font-mono); font-size:11px; color:var(--muted); margin-top:7px; word-break:break-all}
+
+  /* ---- risk ---- */
+  .risk{padding:6px 4px 12px}
+  .risk-row{display:grid; grid-template-columns:auto 1fr auto; gap:11px; align-items:start; padding:11px 14px; border-top:1px solid var(--line)}
+  .risk-row:first-child{border-top:none}
+  .sev{width:9px; border-radius:3px; align-self:stretch; min-height:34px}
+  .sev.hi{background:var(--risk-hi)} .sev.md{background:var(--risk-md)} .sev.lo{background:var(--risk-lo)}
+  .risk-row .rt{font-size:13px; font-weight:600; line-height:1.35}
+  .risk-row .rd{font-size:11.5px; color:var(--muted); margin-top:2px; line-height:1.4}
+  .sevtag{font-size:10px; font-weight:800; letter-spacing:.05em; text-transform:uppercase; padding:3px 7px; border-radius:5px; white-space:nowrap; height:fit-content}
+  .sevtag.hi{background:var(--done-soft);color:var(--done)} /* mitigated shown green below overrides */
+  .rstat{font-family:var(--font-mono); font-size:10px; font-weight:700; padding:3px 7px; border-radius:5px; white-space:nowrap; height:fit-content}
+  .rstat.open{background:var(--active-soft);color:var(--active)}
+  .rstat.ext{background:var(--blocked-soft);color:var(--blocked)}
+  .rstat.mit{background:var(--done-soft);color:var(--done)}
+
+  /* ---- baseline / chart ---- */
+  .baseline{margin-top:18px}
+  .bl-grid{display:grid; grid-template-columns:300px 1fr; gap:20px; padding:16px 18px 20px; align-items:center}
+  @media (max-width:820px){.bl-grid{grid-template-columns:1fr}}
+  .readouts{display:flex; flex-direction:column; gap:12px}
+  .readout{border:1px solid var(--line); border-radius:11px; padding:13px 14px; background:var(--surface-2)}
+  .readout .rl{font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.05em; color:var(--ink-2)}
+  .readout .rv{font-size:23px; font-weight:700; letter-spacing:-.02em; margin-top:3px; font-variant-numeric:tabular-nums}
+  .readout .rv .u{font-size:13px; color:var(--muted); font-weight:600}
+  .readout .rx{font-size:11.5px; color:var(--muted); font-family:var(--font-mono); margin-top:4px}
+  .chartbox{min-width:0; overflow-x:auto}
+  .chart-cap{font-size:11.5px; color:var(--muted); margin-top:8px; display:flex; flex-wrap:wrap; gap:14px; align-items:center}
+  .lgi{display:inline-flex; align-items:center; gap:6px}
+  .lgsw{width:13px;height:11px;border-radius:3px;display:inline-block}
+  .lgln{width:16px;height:0;border-top:2px dashed var(--accent);display:inline-block}
+
+  /* ---- next actions ---- */
+  .next{margin-top:18px; padding:16px 18px 18px}
+  .next-list{display:grid; grid-template-columns:repeat(4,1fr); gap:12px; margin-top:12px}
+  @media (max-width:820px){.next-list{grid-template-columns:repeat(2,1fr)}}
+  @media (max-width:480px){.next-list{grid-template-columns:1fr}}
+  .step{border:1px solid var(--line); border-radius:11px; padding:12px 13px; background:var(--surface-2); position:relative}
+  .step .n{font-family:var(--font-mono); font-size:11px; font-weight:700; color:var(--accent-ink)}
+  .step .st{font-size:13px; font-weight:700; margin-top:3px}
+  .step .sd{font-size:11.5px; color:var(--muted); margin-top:4px; line-height:1.4}
+
+  footer{margin-top:26px; padding-top:16px; border-top:1px solid var(--line); display:flex; flex-wrap:wrap; gap:8px 20px; justify-content:space-between; font-size:11.5px; color:var(--muted); font-family:var(--font-mono)}
+
+  .legend{display:flex; flex-wrap:wrap; gap:14px; padding:0 18px 16px}
+  .legend .li{display:inline-flex; align-items:center; gap:7px; font-size:11.5px; color:var(--ink-2)}
+  .legend .d{width:12px;height:12px;border-radius:50%}
+  .section-title{font-size:12px; font-weight:700; letter-spacing:.05em; text-transform:uppercase; color:var(--muted); margin:26px 2px 12px}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <!-- TOP BAR -->
+  <header class="topbar">
+    <div>
+      <div class="eyebrow"><span class="dot"></span>Senior Thesis · PM Dashboard</div>
+      <h1>Real-Time Video-Based Object Counting on FPGA using YOLO26</h1>
+      <p class="sub">AMD Kria KV260 · Vitis AI 3.0 · DPUCZDX8G INT8 — เดินสองเคสขนาน: Track A (YOLOv8n, พิสูจน์แล้ว) &amp; Track B (YOLO26n, เป้าหมาย)</p>
+    </div>
+    <div class="topmeta">
+      <button class="themebtn" id="themebtn" type="button">◐ สลับธีม</button>
+      <span class="statuspill"><span class="pulse"></span>สถานะระบบ: <b>ติดรอบอร์ด KV260 (Phase 1+)</b></span>
+      <span class="statuspill" style="font-weight:500;color:var(--muted)">อัปเดต <span id="updated">11 ส.ค. 2026</span></span>
+    </div>
+  </header>
+
+  <!-- KPI ROW -->
+  <section class="kpis">
+    <div class="card kpi ring-kpi">
+      <div class="lab">ความคืบหน้ารวม</div>
+      <div class="ringwrap">
+        <svg width="62" height="62" viewBox="0 0 62 62" id="ring" aria-hidden="true"></svg>
+        <div class="ringtxt">
+          <div class="val" id="pct">30<small>%</small></div>
+          <div class="foot" id="fracfoot">6 / 20 milestone</div>
+        </div>
+      </div>
+    </div>
+    <div class="card kpi">
+      <span class="stripe" style="background:var(--done)"></span>
+      <div class="lab">เสร็จแล้ว</div>
+      <div class="val" id="k-done">6</div>
+      <div class="foot">M0·M1·Track A·GPU·P0·P1</div>
+    </div>
+    <div class="card kpi">
+      <span class="stripe" style="background:var(--active)"></span>
+      <div class="lab">ทำได้เลย (ไม่ต้องรอบอร์ด)</div>
+      <div class="val" id="k-ready">8</div>
+      <div class="foot">Track B + M4–M8</div>
+    </div>
+    <div class="card kpi">
+      <span class="stripe" style="background:var(--blocked)"></span>
+      <div class="lab">ติดรอบอร์ด</div>
+      <div class="val" id="k-blocked">5</div>
+      <div class="foot">M9–M13 (Phase 1–3)</div>
+    </div>
+    <div class="card kpi">
+      <span class="stripe" style="background:var(--blocked)"></span>
+      <div class="lab">บอร์ด KV260</div>
+      <div class="val" style="font-size:19px;color:var(--blocked)">ยังไม่มาถึง</div>
+      <div class="foot">blocks M9+</div>
+    </div>
+    <div class="card kpi">
+      <span class="stripe" style="background:var(--done)"></span>
+      <div class="lab">DPU Arch</div>
+      <div class="val" style="font-size:19px;color:var(--done)">B4096 ✓</div>
+      <div class="foot">0x101000056010407</div>
+    </div>
+  </section>
+
+  <!-- MAIN GRID -->
+  <div class="grid">
+
+    <!-- ROADMAP -->
+    <section class="card">
+      <div class="card-h">
+        <h2>เส้นทาง Milestone (critical path)</h2>
+        <span class="note">M0 → M14</span>
+      </div>
+      <div class="rgroup" id="roadmap"></div>
+      <div class="legend">
+        <span class="li"><span class="d" style="background:var(--done)"></span>เสร็จ</span>
+        <span class="li"><span class="d" style="background:var(--active)"></span>ทำได้เลย (host)</span>
+        <span class="li"><span class="d" style="background:var(--blocked)"></span>ติดรอบอร์ด</span>
+        <span class="li"><span class="d" style="border:2px solid var(--todo);background:transparent"></span>ยังไม่เริ่ม</span>
+      </div>
+    </section>
+
+    <!-- RIGHT COLUMN -->
+    <div style="display:flex;flex-direction:column;gap:18px">
+      <section class="card">
+        <div class="card-h"><h2>กลยุทธ์สองเคส (dual-track)</h2></div>
+        <div class="tracks">
+          <div class="track">
+            <div class="track-h">
+              <span class="tn"><span class="k">Track A</span> YOLOv8n</span>
+              <span class="badge b-done">✓ ผ่าน Phase 0 gate</span>
+            </div>
+            <p>Baseline ที่พิสูจน์แล้ว / safety net — <b>ทำให้โครงงานจบได้แน่นอน</b> · ความเสี่ยงต่ำ</p>
+            <div class="mono">yolov8n_kv260_B4096.xmodel · DPU subgraph = 1 · md5 69adf8…</div>
+          </div>
+          <div class="track">
+            <div class="track-h">
+              <span class="tn"><span class="k">Track B</span> YOLO26n</span>
+              <span class="badge b-active">⏳ ยังไม่ผ่าน gate</span>
+            </div>
+            <p>โมเดลเป้าหมายตามชื่อโครงงาน (NMS-free head, ไม่อยู่ใน Model Zoo) · ความเสี่ยงสูง — <b>ถ้าล้มก็ยังเป็น contribution</b> (รู้ว่า YOLO26 ติด op ไหนบน DPU)</p>
+            <div class="mono">pipeline: export → SiLU→LeakyReLU → quantize → compile · คาดหัว 84 ch</div>
+          </div>
+        </div>
+      </section>
+
+      <section class="card">
+        <div class="card-h"><h2>ความเสี่ยง (risk register)</h2></div>
+        <div class="risk" id="risk"></div>
+      </section>
+    </div>
+  </div>
+
+  <!-- BASELINE -->
+  <div class="section-title">GPU Baseline — reference ฝั่ง high-power (FP32, วัดจริง)</div>
+  <section class="card baseline">
+    <div class="card-h">
+      <h2>NVIDIA GTX 1660 Ti Max-Q · YOLOv8n · COCO128</h2>
+      <span class="note">รายงานคู่: real-time + peak</span>
+    </div>
+    <div class="bl-grid">
+      <div class="readouts">
+        <div class="readout">
+          <div class="rl">Real-time · batch = 1</div>
+          <div class="rv">31.5 <span class="u">FPS</span> · 22.8 <span class="u">W</span></div>
+          <div class="rx">→ 1.38 FPS/W · spread ±6 (Max-Q ramp)</div>
+        </div>
+        <div class="readout">
+          <div class="rl">Peak · batch = 32</div>
+          <div class="rv">264 <span class="u">img/s</span> · 58.7 <span class="u">W</span></div>
+          <div class="rx">→ 4.50 img/s/W · util 96% (จุดอิ่มตัว)</div>
+        </div>
+      </div>
+      <div class="chartbox">
+        <svg id="chart" width="100%" viewBox="0 0 560 300" role="img" aria-label="Batch sweep: throughput and efficiency"></svg>
+        <div class="chart-cap">
+          <span class="lgi"><span class="lgsw" style="background:var(--accent)"></span>throughput (img/s)</span>
+          <span class="lgi"><span class="lgln"></span>ประสิทธิภาพ (img/s/W)</span>
+          <span class="lgi" style="color:var(--active)">◆ peak @ batch 32</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- NEXT ACTIONS -->
+  <section class="card next">
+    <div class="card-h" style="padding:0 0 4px">
+      <h2>งานถัดไป — front-load งานที่ไม่ต้องใช้บอร์ด</h2>
+      <span class="note">de-risk critical-path-first</span>
+    </div>
+    <div class="next-list">
+      <div class="step"><div class="n">01</div><div class="st">M4 · VART C++ host code</div><div class="sd">น้ำหนักสูงสุด · เขียน+compile-check บน host · load xmodel → runner → raw 3 tensors</div></div>
+      <div class="step"><div class="n">02</div><div class="st">M5 · CPU emulation verify</div><div class="sd">เทียบ xmodel vs PyTorch float (max abs err + cosine) จับ bug preprocessing เงียบ</div></div>
+      <div class="step"><div class="n">03</div><div class="st">M2-B1 · Inspector YOLO26n</div><div class="sd">รู้ว่า op ไหนจะตก CPU ก่อน fine-tune/compile Track B</div></div>
+      <div class="step"><div class="n">04</div><div class="st">M6 · Ubuntu image checklist</div><div class="sd">verify overlay = B4096 + fingerprint ตรง — de-risk ความเสี่ยงอันดับต้นของ Phase 1</div></div>
+    </div>
+  </section>
+
+  <footer>
+    <span>ที่มา: 00-admin/timeline.md · 05-benchmarks/gpu-baseline · 07-notes/P1_arch_and_identity_resolution.md</span>
+    <span>อัปเดต 2026-08-11 · thesis-yolo26-fpga</span>
+  </footer>
+</div>
+
+<script>
+(function(){
+  var root=document.documentElement;
+  function apply(t){ if(t){root.setAttribute('data-theme',t)} }
+  var saved=null; try{saved=localStorage.getItem('dash-theme')}catch(e){}
+  apply(saved);
+  document.getElementById('themebtn').addEventListener('click',function(){
+    var cur=root.getAttribute('data-theme');
+    if(!cur){cur=matchMedia('(prefers-color-scheme:dark)').matches?'dark':'light'}
+    var next=cur==='dark'?'light':'dark';
+    apply(next); try{localStorage.setItem('dash-theme',next)}catch(e){}
+    draw();
+  });
+
+  function cssv(n){return getComputedStyle(root).getPropertyValue(n).trim()}
+
+  // ==== DATA — บล็อกนี้ generate อัตโนมัติโดย sync_dashboard.ps1 จาก timeline.md ====
+  // ==== อย่าแก้ด้วยมือ: แก้สถานะที่ 00-admin/timeline.md แล้ว sync ====
+  /*==MILESTONES:START==*/
+  var MILESTONES=[
+    {id:'M0',s:'done',board:false,t:'เลือก target board + toolchain (KV260 / Vitis AI 3.0)',g:'platform_selection.docx'},
+    {id:'M1',s:'done',board:false,t:'ตั้ง Vitis AI 3.0 container + flow ครบ',g:'RUNBOOK_phase0'},
+    {id:'M2-A',s:'done',board:false,t:'Track A: YOLOv8n compile ผ่าน',g:'DPU subgraph number 1'},
+    {id:'M3-GPU',s:'done',board:false,t:'GPU baseline (FP32 คู่)',g:'31.5 FPS@22.8W / 264 img/s@58.7W'},
+    {id:'P0',s:'done',board:false,t:'กู้ artifact ออกจาก WSL มาไว้บนเดสก์ท็อป',g:'.xmodel + log + results + calib มีสำเนา'},
+    {id:'P1',s:'done',board:false,t:'เคลียร์ B3136 vs B4096',g:'arch จริง = B4096 · แก้ให้ตรงทุกไฟล์'},
+    {id:'M2-B1',s:'todo',board:false,t:'Track B: รัน Inspector บน YOLO26n',g:'ได้รายงานว่า op ไหนจะตก CPU'},
+    {id:'M2-B2',s:'todo',board:false,t:'Track B: fine-tune หลัง SiLU→LeakyReLU',g:'accuracy กลับมาใกล้เดิม'},
+    {id:'M2-B3',s:'todo',board:false,t:'Track B: compile YOLO26n → gate',g:'1 DPU subgraph, ไม่มี op บน CPU'},
+    {id:'M4',s:'done',board:false,t:'VART C++ host code (น้ำหนักสูงสุด)',g:'เขียน + compile-check ผ่านบน host'},
+    {id:'M5',s:'todo',board:false,t:'CPU emulation verify (preprocessing ถูก)',g:'xmodel vs PyTorch float ผ่าน'},
+    {id:'M6',s:'todo',board:false,t:'Ubuntu-on-Kria image + DPU firmware checklist',g:'ยืนยัน overlay ตรง B4096'},
+    {id:'M7',s:'todo',board:false,t:'Counting ground-truth dataset (single-class)',g:'annotate เสร็จ พร้อมวัด MAE'},
+    {id:'M8',s:'todo',board:false,t:'re-quantize เป็น single-class',g:'xmodel ใหม่ compile ผ่าน'},
+    {id:'M9',s:'blocked',board:true,t:'Phase 1 — board bring-up',g:'loadapp → fingerprint ตรง → first live inference'},
+    {id:'M10',s:'blocked',board:true,t:'Phase 2 — tracking + line-crossing counting',g:'นับถูกบนวิดีโอทดสอบ'},
+    {id:'M11',s:'blocked',board:true,t:'Phase 3 — benchmark เทียบ GPU baseline',g:'FPS/W · mAP · counting MAE'},
+    {id:'M12',s:'blocked',board:true,t:'Profiling หา bottleneck',g:'รู้ layer/stage คอขวด'},
+    {id:'M13',s:'blocked',board:true,t:'(Optional) custom accelerator',g:'speedup วัดได้เทียบ baseline'},
+    {id:'M14',s:'todo',board:false,t:'รายงาน + สไลด์ป้องกัน',g:'ส่งครบ'}
+  ];
+  var META={pct:35,done:7,ready:8,blocked:5,total:20,updated:'11 ส.ค. 2026'};
+  /*==MILESTONES:END==*/
+
+  // ---- apply META to KPI + header ----
+  document.getElementById('pct').innerHTML=META.pct+'<small>%</small>';
+  document.getElementById('fracfoot').textContent=META.done+' / '+META.total+' milestone';
+  document.getElementById('k-done').textContent=META.done;
+  document.getElementById('k-ready').textContent=META.ready;
+  document.getElementById('k-blocked').textContent=META.blocked;
+  document.getElementById('updated').textContent=META.updated;
+
+  // ---- progress ring ----
+  (function ring(){
+    var svg=document.getElementById('ring'), pct=META.pct, r=25, c=2*Math.PI*r, cx=31,cy=31;
+    var off=c*(1-pct/100);
+    svg.innerHTML=
+      '<circle cx="'+cx+'" cy="'+cy+'" r="'+r+'" fill="none" stroke="var(--line)" stroke-width="7"/>'+
+      '<circle cx="'+cx+'" cy="'+cy+'" r="'+r+'" fill="none" stroke="var(--accent)" stroke-width="7" '+
+      'stroke-linecap="round" stroke-dasharray="'+c+'" stroke-dashoffset="'+off+'" transform="rotate(-90 '+cx+' '+cy+')"/>';
+  })();
+
+  // ---- roadmap: group MILESTONES by status ----
+  var GROUPDEF=[
+    {key:'done',    label:'เสร็จแล้ว',                    tag:'done',    tagtxt:'DONE'},
+    {key:'ready',   label:'ทำต่อได้เลย — ไม่ต้องใช้บอร์ด', tag:'active',  tagtxt:'READY'},
+    {key:'blocked', label:'ติดรอบอร์ด KV260',              tag:'blocked', tagtxt:'BLOCKED'}
+  ];
+  function groupKey(m){ return m.s==='done'?'done':(m.s==='blocked'||m.board)?'blocked':'ready'; }
+  function dotState(m){ return m.s==='done'?'done':(m.s==='blocked'||m.board)?'blocked':'todo'; }
+  var mark={done:'✓',active:'',blocked:'',todo:''};
+  var html='';
+  GROUPDEF.forEach(function(gr){
+    var items=MILESTONES.filter(function(m){return groupKey(m)===gr.key;});
+    if(!items.length)return;
+    html+='<div class="rgroup-h"><span class="tag '+gr.tag+'">'+gr.tagtxt+'</span>'+gr.label+'</div>';
+    items.forEach(function(m){
+      var ds=dotState(m);
+      html+='<div class="mitem">'+
+        '<span class="mid">'+m.id+'</span>'+
+        '<span class="mstate s-'+ds+'">'+(mark[ds]||'')+'</span>'+
+        '<span class="mbody"><span class="mt">'+m.t+'</span><span class="mg thai">'+m.g+'</span></span>'+
+      '</div>';
+    });
+  });
+  document.getElementById('roadmap').innerHTML=html;
+
+  // ---- risk register ----
+  var risks=[
+    {sev:'hi',stat:'ext',statx:'external',t:'บอร์ด KV260 ยังไม่มาถึง → block Phase 1–3',d:'front-load M4–M8 ให้หมด วันบอร์ดมาเหลือแค่ deploy + debug'},
+    {sev:'hi',stat:'open',statx:'ต้อง verify',t:'fingerprint บน Ubuntu image อาจไม่ตรง 0x101000056010407',d:'DPU overlay ผูกกับ image · ไม่ตรง → re-compile xmodel (M6 checklist)'},
+    {sev:'md',stat:'open',statx:'ยังไม่ทดสอบ',t:'Track B (YOLO26n) อาจ compile ไม่ผ่าน gate',d:'NMS-free head · ยอมรับได้ — Track A ผ่านแล้ว ผลนี้เป็น contribution'},
+    {sev:'lo',stat:'mit',statx:'ปิดแล้ว P0',t:'artifact ถูก gitignore (backup กายภาพเท่านั้น)',d:'กู้ออกจาก WSL แล้ว 162 ไฟล์ · WSL .vhdx เคยพังมาก่อน'},
+    {sev:'lo',stat:'mit',statx:'documented',t:'FP16 ใช้ไม่ได้บน TU116 → baseline FP32 เท่านั้น',d:'known issue (ไม่มี Tensor Core) · สมเหตุผลเพราะ KV260 เทียบเป็น INT8 อยู่แล้ว'}
+  ];
+  document.getElementById('risk').innerHTML=risks.map(function(r){
+    return '<div class="risk-row"><span class="sev '+r.sev+'"></span>'+
+      '<span><span class="rt">'+r.t+'</span><span class="rd">'+r.d+'</span></span>'+
+      '<span class="rstat '+r.stat+'">'+r.statx+'</span></div>';
+  }).join('');
+
+  // ---- batch sweep chart ----
+  var data=[
+    {b:'1',img:25.7,eff:1.21},{b:'4',img:108.5,eff:2.47},{b:'8',img:239.1,eff:4.16},
+    {b:'16',img:259.1,eff:4.50},{b:'32',img:263.9,eff:4.51,peak:true},{b:'64',img:263.9,eff:4.50}
+  ];
+  function draw(){
+    var svg=document.getElementById('chart');
+    var W=560,H=300, mL=44,mR=44,mT=18,mB=44;
+    var iw=W-mL-mR, ih=H-mT-mB;
+    var maxImg=280, maxEff=5;
+    var accent=cssv('--accent'), line=cssv('--line'), muted=cssv('--muted'), ink2=cssv('--ink-2'), active=cssv('--active');
+    var n=data.length, bw=iw/n*0.52;
+    var s='';
+    // grid + y ticks (left img/s)
+    for(var g=0;g<=4;g++){
+      var yv=maxImg*g/4, y=mT+ih-(yv/maxImg*ih);
+      s+='<line x1="'+mL+'" y1="'+y+'" x2="'+(W-mR)+'" y2="'+y+'" stroke="'+line+'" stroke-width="1"/>';
+      s+='<text x="'+(mL-8)+'" y="'+(y+4)+'" text-anchor="end" font-size="10" fill="'+muted+'" font-family="var(--font-mono)">'+yv+'</text>';
+    }
+    // right axis eff ticks
+    for(var e=0;e<=5;e++){
+      var yy=mT+ih-(e/maxEff*ih);
+      s+='<text x="'+(W-mR+8)+'" y="'+(yy+4)+'" text-anchor="start" font-size="10" fill="'+muted+'" font-family="var(--font-mono)">'+e+'</text>';
+    }
+    // bars
+    data.forEach(function(d,i){
+      var cx=mL+iw*(i+0.5)/n;
+      var bh=d.img/maxImg*ih, y=mT+ih-bh;
+      var fill=d.peak?active:accent;
+      s+='<rect x="'+(cx-bw/2)+'" y="'+y+'" width="'+bw+'" height="'+bh+'" rx="3" fill="'+fill+'"/>';
+      s+='<text x="'+cx+'" y="'+(y-6)+'" text-anchor="middle" font-size="10.5" font-weight="700" fill="'+ink2+'" font-family="var(--font-mono)">'+d.img+'</text>';
+      s+='<text x="'+cx+'" y="'+(H-mB+16)+'" text-anchor="middle" font-size="10.5" fill="'+muted+'" font-family="var(--font-mono)">'+d.b+'</text>';
+    });
+    // x label
+    s+='<text x="'+(mL+iw/2)+'" y="'+(H-6)+'" text-anchor="middle" font-size="10.5" fill="'+muted+'">batch size</text>';
+    // eff line
+    var pts=data.map(function(d,i){var cx=mL+iw*(i+0.5)/n; var y=mT+ih-(d.eff/maxEff*ih); return [cx,y];});
+    var path=pts.map(function(p,i){return (i?'L':'M')+p[0]+' '+p[1]}).join(' ');
+    s+='<path d="'+path+'" fill="none" stroke="'+accent+'" stroke-width="2" stroke-dasharray="5 4" opacity="0.9"/>';
+    pts.forEach(function(p,i){
+      s+='<circle cx="'+p[0]+'" cy="'+p[1]+'" r="3.2" fill="'+cssv('--surface')+'" stroke="'+accent+'" stroke-width="2"/>';
+    });
+    // peak diamond marker
+    var pk=data.findIndex(function(d){return d.peak});
+    var pcx=mL+iw*(pk+0.5)/n, pcy=mT+ih-(data[pk].eff/maxEff*ih);
+    s+='<path d="M'+pcx+' '+(pcy-7)+' L'+(pcx+6)+' '+pcy+' L'+pcx+' '+(pcy+7)+' L'+(pcx-6)+' '+pcy+' Z" fill="'+active+'"/>';
+    svg.innerHTML=s;
+  }
+  draw();
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,77 @@
+{
+  "gpu": "NVIDIA GeForce GTX 1660 Ti with Max-Q Design",
+  "torch": "2.11.0+cu128",
+  "precision": "FP32",
+  "imgsz": 640,
+  "idle_power_w": 3.832,
+  "runs": 5,
+  "iters": 200,
+  "results": {
+    "pure": {
+      "fps": 31.45643036654847,
+      "median_ms": 31.79000250020181,
+      "power_w": 22.798275
+    },
+    "e2e": {
+      "fps": 25.531251081129,
+      "median_ms": 39.1676849999385,
+      "power_w": 22.652296875
+    },
+    "sweep": {
+      "1": {
+        "latency_ms": 38.9493600005153,
+        "fps_total": 25.67436281332402,
+        "fps_per_call": 25.67436281332402,
+        "power_w": 21.1863,
+        "util": 32.96,
+        "oom": false
+      },
+      "4": {
+        "latency_ms": 36.8618264997167,
+        "fps_total": 108.51334238770674,
+        "fps_per_call": 27.128335596926686,
+        "power_w": 43.92272,
+        "util": 32.74,
+        "oom": false
+      },
+      "8": {
+        "latency_ms": 33.46010550012579,
+        "fps_total": 239.09069862227196,
+        "fps_per_call": 29.886337327783995,
+        "power_w": 57.53764,
+        "util": 61.12,
+        "oom": false
+      },
+      "16": {
+        "latency_ms": 61.761766000017815,
+        "fps_total": 259.05994980770765,
+        "fps_per_call": 16.19124686298173,
+        "power_w": 57.51818,
+        "util": 83.42,
+        "oom": false
+      },
+      "32": {
+        "latency_ms": 121.2751279999793,
+        "fps_total": 263.8628425113306,
+        "fps_per_call": 8.245713828479081,
+        "power_w": 58.46368,
+        "util": 96.26,
+        "oom": false
+      },
+      "64": {
+        "latency_ms": 242.54085899974598,
+        "fps_total": 263.87306561022376,
+        "fps_per_call": 4.123016650159746,
+        "power_w": 58.65688,
+        "util": 98.08,
+        "oom": false
+      }
+    },
+    "peak": {
+      "batch": 64,
+      "img_s": 263.87306561022376,
+      "power_w": 58.65688,
+      "img_s_per_w": 4.498586791698156
+    }
+  }
+}

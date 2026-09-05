@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "PowerShell(& \"C:\\\\Users\\\\Gunonemore\\\\Desktop\\\\thesis-yolo26-fpga\\\\00-admin\\\\sync_dashboard.ps1\")",
+      "Skill(update-config)",
+      "Skill(update-config:*)",
+      "Bash(powershell.exe -NoProfile -Command 'Get-Process -Name '\\\\''Docker Desktop'\\\\'','\\\\''com.docker.backend'\\\\'','\\\\''com.docker.build'\\\\'','\\\\''vpnkit'\\\\'','\\\\''com.docker.dev-envs'\\\\'' -ErrorAction SilentlyContinue | Stop-Process -Force; Start-Sleep 3; $p = Get-Process -Name '\\\\''Docker Desktop'\\\\'','\\\\''com.docker.backend'\\\\'' -ErrorAction SilentlyContinue; if \\($p\\) { '\\\\''still running: '\\\\'' + \\($p.Count\\) } else { '\\\\''all docker processes stopped'\\\\'' }')",
+      "Read(//c/Users/Gunonemore/AppData/Local/Docker/run/**)",
+      "Read(//c/Users/Gunonemore/AppData/Local/Docker//**)",
+      "Bash(powershell.exe -NoProfile -Command '$run='\\\\''C:\\\\Users\\\\Gunonemore\\\\AppData\\\\Local\\\\Docker\\\\run'\\\\''; foreach \\($f in '\\\\''dockerInference'\\\\'','\\\\''dockerEthernetVfkit'\\\\'','\\\\''userAnalyticsOtlpHttp.sock'\\\\''\\) { $p = Join-Path $run $f; try { Remove-Item -LiteralPath $p -Force -ErrorAction Stop; \"deleted: $f\" } catch { \"FAILED $f -> \" + $_.Exception.Message } }; '\\\\'''\\\\''; '\\\\''remaining in run:'\\\\''; Get-ChildItem -LiteralPath $run -Force -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Name')",
+      "Bash(pwd -W)",
+      "Bash(MSYS_NO_PATHCONV=1 docker run --rm -v __CMDSUB_OUTPUT__/03-model/phase0-wsl-recovered:/workspace/thesis/phase0 -w /workspace/thesis/phase0 xilinx/vitis-ai-pytorch-cpu:ubuntu2004-3.0.0.106 bash -lc 'source /opt/vitis_ai/conda/etc/profile.d/conda.sh; conda activate vitis-ai-pytorch; pip install --no-deps -q '\\\\''ultralytics<8.1'\\\\'' 2>&1 | tail -1; export PYTHONWARNINGS=ignore; export YOLO_VERBOSE=False;   python finetune_leakyrelu.py --epochs 1 --batch 8 --out yolov8n_leaky_SMOKE.pt 2>&1 | grep -vE '\\\\''it/s\\\\]|it/s,|^\\\\s*$'\\\\'' | tail -60')",
+      "Bash(MSYS_NO_PATHCONV=1 docker run --rm --name ft_leaky -v __CMDSUB_OUTPUT__/03-model/phase0-wsl-recovered:/workspace/thesis/phase0 -w /workspace/thesis/phase0 xilinx/vitis-ai-pytorch-cpu:ubuntu2004-3.0.0.106 bash -lc 'source /opt/vitis_ai/conda/etc/profile.d/conda.sh; conda activate vitis-ai-pytorch; pip install --no-deps -q '\\\\''ultralytics<8.1'\\\\'' py-cpuinfo thop 2>&1 | tail -1; export PYTHONWARNINGS=ignore;   python -u finetune_leakyrelu.py --epochs 30 --batch 8 --out yolov8n_leaky_ft.pt 2>&1 | grep --line-buffered -vE '\\\\''it/s|WARNING: Running pip'\\\\''')"
+    ]
+  }
+}

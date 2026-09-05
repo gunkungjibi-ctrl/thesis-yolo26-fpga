@@ -1,0 +1,3 @@
+/workspace/04-deploy/board/build/CMakeFiles/edit_cache.dir
+/workspace/04-deploy/board/build/CMakeFiles/rebuild_cache.dir
+/workspace/04-deploy/board/build/CMakeFiles/yolo_dpu_infer.dir

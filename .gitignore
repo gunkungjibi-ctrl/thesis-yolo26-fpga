@@ -1,0 +1,31 @@
+# data / weights / build artifacts
+02-dataset/raw/
+02-dataset/calib/
+*.pt
+*.onnx
+*.xmodel
+*.bit
+*.xclbin
+*.mp4
+*.avi
+
+# python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# logs
+05-benchmarks/logs/*.log
+*.log
+
+# os
+Thumbs.db
+desktop.ini
+.DS_Store
+
+# stray artifact from a bad path command
+/C:/
+
+# oversized build artifacts (exceed GitHub 100MB limit)
+tmp_tflite_int8_calibration_images.npy

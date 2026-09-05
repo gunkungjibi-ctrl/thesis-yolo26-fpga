@@ -1,0 +1,16 @@
+# package-conveyo v2 (Roboflow export, YOLOv8 detection)
+# paths made absolute for this repo layout — 208 train / 57 valid / 28 test
+path: C:/Users/Gunonemore/Desktop/thesis-yolo26-fpga/02-dataset/detection
+train: train/images
+val: valid/images
+test: test/images
+
+nc: 1
+names: ['package']
+
+roboflow:
+  workspace: guns-workspace-e4rag
+  project: package-conveyo
+  version: 2
+  license: CC BY 4.0
+  url: https://universe.roboflow.com/guns-workspace-e4rag/package-conveyo/dataset/2

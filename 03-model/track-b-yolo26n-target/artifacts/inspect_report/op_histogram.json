@@ -1,0 +1,27 @@
+{
+  "total": 457,
+  "ops": {
+    "Conv": 102,
+    "LeakyRelu": 87,
+    "Shape": 9,
+    "Constant": 93,
+    "Gather": 9,
+    "Add": 31,
+    "Div": 10,
+    "Mul": 21,
+    "Slice": 18,
+    "Concat": 27,
+    "MaxPool": 3,
+    "Split": 3,
+    "Reshape": 15,
+    "Transpose": 5,
+    "MatMul": 4,
+    "Softmax": 2,
+    "Resize": 2,
+    "Expand": 6,
+    "Unsqueeze": 7,
+    "Sub": 2,
+    "Sigmoid": 1
+  },
+  "risky": {}
+}

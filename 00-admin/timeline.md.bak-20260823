@@ -1,0 +1,44 @@
+# Timeline / Milestones
+
+อัปเดต 15 ส.ค. 2026
+
+> 🔗 **ไฟล์นี้ = single source of truth ของสถานะโปรเจค.** `00-admin/dashboard.html` ถูก generate จากตารางในไฟล์นี้ — แก้สถานะที่นี่ที่เดียว แล้วบอก Claude ว่า **"sync dashboard"** เพื่ออัปเดตแดชบอร์ดให้ตรงกัน (กติกาแปลงสถานะ: ✅ = เสร็จ · `ต้องมีบอร์ด?`=ใช่ → กลุ่มติดรอบอร์ด · นอกนั้น = ทำได้เลยบน host)
+
+## เสร็จแล้ว
+
+| # | Milestone | หลักฐาน | สถานะ |
+|---|---|---|---|
+| M0 | เลือก target board + toolchain (KV260 / Vitis AI 3.0) | `01-docs/platform_selection.docx` | ✅ |
+| M1 | ตั้ง Vitis AI 3.0 container + flow ครบ | `03-model/RUNBOOK_phase0_ORIGINAL.md` | ✅ |
+| M2-A | **Track A: YOLOv8n compile ผ่าน** | `DPU subgraph number 1` | ✅ |
+| M3-GPU | GPU baseline (FP32 คู่: 31.5 FPS @22.8W / 264 img/s @58.7W) | `05-benchmarks/gpu-baseline/` | ✅ |
+
+## งานถัดไป (เรียงตาม critical path)
+
+| # | งาน | เกณฑ์ผ่าน | ต้องมีบอร์ด? | สถานะ |
+|---|---|---|---|---|
+| **P0** | **กู้ artifact ออกจาก WSL มาไว้บนเดสก์ท็อป** | `.xmodel` + `vai_c_xir_*.log` + `results_fp32_final.json` + `calib_images/` มีสำเนา | ไม่ | ✅ |
+| **P1** | **เคลียร์ B3136 vs B4096** | อ่าน log จริง + `xdputil xmodel -l` → แก้ให้ตรงกันทุกไฟล์ | ไม่ | ✅ |
+| M2-B1 | Track B: รัน Inspector บน YOLO26n | ได้รายงานว่า op ไหนจะตก CPU | ไม่ | ✅ **ทำเสร็จผ่าน ONNX op analysis** (nndct Inspector ติด python clash → ใช้ทางเลือก export ONNX py3.9). **ผล:** NMS-free head ไม่เป็นปัญหา (end2end=False → watchlist หายหมด) แต่เจอ **attention 2 จุดกลางเน็ต** (model.10 ~32%, model.22 ~69%: MatMul+Softmax) ที่ DPU map ไม่ได้ → จะตัด subgraph. รายละเอียด: `03-model/track-b-yolo26n-target/artifacts/inspect_report/FINDINGS_op_analysis.md` |
+| M2-B2 | Track B: fine-tune หลัง SiLU→LeakyReLU | accuracy กลับมาใกล้เดิม | ไม่ | ✅ **เสร็จ (Colab T4, 400 epochs)** — LeakyReLU(26/256) + fine-tune. **yolov8n mAP50=0.884**, **yolo26n mAP50=0.831** (≈ Roboflow SiLU เดิม → พิสูจน์ swap ไม่ทำ accuracy ตกถ้าเทรนพอ). weights: `track-{a,b}-*/finetune/*_ft.pt` |
+| M2-B3 | **Track B: compile YOLO26n → gate** | 1 DPU subgraph, ไม่มี op บน USER/CPU | ไม่ | ☐ |
+| M4 | VART C++ host code (pre-staging น้ำหนักสูงสุด) | เขียน + compile-check ผ่านบน host | ไม่ | ✅ compile-check ผ่านใน Vitis AI 3.0 container (`04-deploy/board/`, 2026-08-11) |
+| M5 | CPU emulation verify (preprocessing ถูก) | xmodel vs PyTorch float: max abs err + cosine sim ผ่าน | ไม่* | ☐ **block ด้วย M2-B2** — script เขียนเสร็จ (`compare_dpu_vs_golden.py`); execute จริงผ่าน VART รันในคอนเทนเนอร์ x86 ไม่ได้ (`no DpuController found for DPUCZDX8G`) → ผูกกับ M9. ส่วน proxy (PyTorch quantizer test-mode) รันแล้ว = **WARN**: cos_sim 0.991/0.942/0.894 (80/40/20), ต่ำกว่า 0.99 ที่ 2/3 tensor. **ขุดสาเหตุแล้ว** (`07-notes/M5_cossim_dropoff_diagnosis.md`, 2026-08-11): ต้นตอคือ SiLU→LeakyReLU **ยังไม่ fine-tune (M2-B2)** → logit range ระเบิด ±2000 → int8 saturate. ต้องทำ M2-B2 ก่อนแล้ว re-verify |
+| M6 | Ubuntu-on-Kria image + DPU firmware checklist | ยืนยัน overlay ตรง arch ที่ compile ไว้ | ไม่ | ☐ |
+| M7 | Counting ground-truth dataset (single-class "package") | annotate เสร็จ พร้อมวัด MAE | ไม่ | ☐ |
+| M8 | re-quantize เป็น single-class (จาก 80-class COCO) | xmodel ใหม่ compile ผ่าน | ไม่ | ☐ |
+| **M9** | **Phase 1 — board bring-up** | `xmutil loadapp` → `xdputil query` fingerprint ตรง → **first live DPU inference shape ถูก** | **ใช่** | 🟡 **บอร์ดมาแล้ว (16 ส.ค.) — fingerprint ยืนยันตรง!** image = **PetaLinux starter kit** (ไม่ใช่ Ubuntu), DPU `kv260-benchmark-b4096` B4096 active อยู่แล้ว, `xdputil query` → arch B4096 + fingerprint `0x101000056010407` ตรง xmodel เป๊ะ + VART 3.0 ครบ. เหลือ: scp xmodel → `xdputil benchmark` = first inference |
+| M10 | Phase 2 — tracking + line-crossing counting บน PS | นับถูกบนวิดีโอทดสอบ | ใช่ | ☐ |
+| M11 | Phase 3 — benchmark เทียบ GPU baseline | FPS/W, mAP, counting MAE, FPGA compute share | ใช่ | ☐ |
+| M12 | Profiling หา bottleneck | รู้ layer/stage คอขวด | ใช่ | ☐ |
+| M13 | (Optional) custom accelerator | speedup วัดได้เทียบ baseline | ใช่ | ☐ |
+| M14 | รายงาน + สไลด์ป้องกัน | ส่งครบ | — | ☐ |
+
+## หมายเหตุ
+
+- **P0 และ P1 ทำก่อนทุกอย่าง** — P0 กันหลักฐานหาย, P1 กันทำงานซ้ำสองรอบ (ถ้า arch ผิด ต้อง re-quantize + re-compile ทั้ง Track A และ B)
+- **M9 ปิดไม่ได้จนกว่าบอร์ดจะมา** — งานที่ไม่ต้องใช้บอร์ด (M4–M8) ทำล่วงหน้าให้หมด วันบอร์ดมาจะเหลือแค่ deploy + debug runtime
+- **M2-B3 ล้มไม่ใช่ความล้มเหลวของโครงงาน** — Track A ผ่านแล้ว โครงงานจบได้ และผลว่า YOLO26 ติดตรงไหนเขียนเข้าเล่มเป็น contribution ได้
+- M7 ทำคู่ขนานได้ ไม่ block งานอื่น
+- **M5 ส่วน "รันจริงผ่าน VART" ผูกกับบอร์ด** — คอนเทนเนอร์ x86 ไม่มี DpuController จำลอง DPUCZDX8G ดังนั้น `yolo_dpu_infer` (M4) รันได้แค่ compile-check ไม่ใช่ execute จนกว่าบอร์ดมา (M9). ส่วนที่ verify ได้ตอนนี้คือ PyTorch quantizer test-mode proxy เท่านั้น ซึ่งพบ cos_sim ต่ำกว่าเกณฑ์ที่ output 40x40/20x20 — ควรตรวจก่อน M9
+- **M5 proxy WARN → root cause = M2-B2** (ขุดเสร็จ 2026-08-11, `07-notes/M5_cossim_dropoff_diagnosis.md`): cos_sim ต่ำเพราะ golden float model ทำ SiLU→LeakyReLU แต่ยังไม่ fine-tune → logit range ระเบิด (±2000 ที่ 20x20) → int8 saturate. **M2-B2 จึงเป็น dependency ของ M5** — fine-tune ก่อน แล้ว cos_sim ควรกลับขึ้น. อีกประเด็น: metric ที่ถูกคือ mAP/detection agreement หลัง decode+NMS ไม่ใช่ raw-tensor cosine

@@ -1,0 +1,8 @@
+{
+    "lib": "libvart-dpu-runner.so",
+    "filename": "yolov8n_pkg_kv260.xmodel",
+    "kernel": [
+        "subgraph_BackboneHead__BackboneHead_10884"
+    ],
+    "target": "DPUCZDX8G_ISA1_B4096"
+}
