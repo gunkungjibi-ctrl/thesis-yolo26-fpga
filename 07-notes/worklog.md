@@ -145,4 +145,18 @@ user เอา `.pt`/`.onnx` ทั้งหมด (ใหญ่สุด 13MB) 
 - **cross-check ที่ได้เพิ่ม:** traced graph ของ checkpoint จริงมี **softmax 2 + matmul(data×data) 4** = attention 2 จุด × (2 matmul + 1 softmax) ตรงกับ M2-B1 เป๊ะ
 - commit `yolo26n_pkg_state_dict.pt` (verify แล้ว) เข้า repo → ขั้นที่ 1 ของ runbook ข้ามได้ เข้าคอนเทนเนอร์ได้เลย
 - dry-run flow เต็มด้วยน้ำหนักจริง + calib จริง 8 รูป (nndct stub) → ผ่านทั้ง 2 pass
+
+## 2026-09-05 (ต่ออีกที) — M2-B3 รันจริงบนเดสก์ท็อป: **ปิดคำถาม Track B แล้ว (compile error)**
+
+เปิด Docker Desktop บนเดสก์ท็อป (image + env ตรง spec: py3.7.12 / torch 1.12.1) รัน `quantize_yolo26n_dpu.py` ด้วย `yolo26n_pkg_state_dict.pt` ตัวจริง + calib 208 รูปจาก `02-dataset/calib/images/`
+
+- **Pass 1 (calibrate, subset_len=32) ผ่านสมบูรณ์** — forward ครบ 32/32
+- **Pass 2 (`--quant_mode test --deploy`) ล้ม — ไม่ถึงขั้นรัน `vai_c_xir` ด้วยซ้ำ**
+  พังตอน nndct แปลง traced graph → XIR graph: `AddXopError` ที่ op `nndct_elemwise_mul` ตรง
+  `C2PSA[model]/.../Attention[attn]/22573` — คือ `attn = (q.transpose(-2,-1) @ k) * self.scale` ใน `Attention.forward`
+  (`self.scale` เป็น python float คงที่ ไม่ใช่ tensor — nndct's XIR converter สร้าง fixed-point binary op จาก tensor×scalar-constant ตัวนี้ไม่ได้ โยน `'Caught an unknown exception!'`)
+- **นี่คือ node แรกของ attention block ที่ M2-B1 ชี้ไว้พอดี** (`model.10`) — ยืนยัน mechanism เดิม (attention คือตัวบล็อก) เพียงแต่จุดที่ตกจริงคือ scale-multiply ก่อน softmax ไม่ใช่ matmul/softmax เอง
+- **ตามตารางตัดสินในบรีฟ** ผลนี้ตกแถว "compile error — op ที่ compiler ปฏิเสธตรงๆ" = ปิดคำถามวิจัย Track B ได้แล้ว (ไม่ต้องรอ `vai_c_xir` log เพราะพังก่อนถึงขั้นนั้น)
+- log เต็ม: `quantize/export_xmodel_FAIL_2026-09-05.log` (pass 1: `quantize_calib_pass1_2026-09-05.log`) · เขียนเข้า `FINDINGS_op_analysis.md` ภาคผนวก M2-B3 แล้ว
+- **M2-B3 เสร็จ (ผลคือ compile error ที่ระบุ op ได้ชัด)** → เหลือ M14 (finalize รายงาน) เป็นงานหลักที่เหลือ
 - **ทำต่อ:** รัน `RUNBOOK_M2B3.md` ขั้น 2–6 บนเครื่องที่มี Docker → ได้ `vai_c_xir` log = ปิด M2-B3

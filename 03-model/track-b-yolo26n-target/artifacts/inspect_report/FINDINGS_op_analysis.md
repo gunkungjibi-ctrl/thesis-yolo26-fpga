@@ -78,3 +78,40 @@ source ของ `Attention.forward` ยืนยัน mechanism: `q.transpose(
 - **`one2one_cv2/cv3`** = NMS-free branch → เลือกได้ด้วย `--use_one2one`
 
 การตั้ง `end2end=False` ตอน export (ที่ทำใน M2-B1) = เลือกเดินหัว o2m ซึ่งเป็นเหตุผลที่ TopK/GatherElements หายไป — ตรงกับที่สรุปไว้
+
+---
+
+## M2-B3 (2026-09-05) — รัน `vai_c_xir` จริง: พังเร็วกว่าที่คาด แต่ตรงจุดเดิม
+
+**สภาพแวดล้อม:** Docker Desktop เดสก์ท็อป, `xilinx/vitis-ai-pytorch-cpu:ubuntu2004-3.0.0.106`, conda env `vitis-ai-pytorch` (py3.7.12, torch 1.12.1) — ตรง spec ทุกข้อ
+
+**ผล:**
+- **Pass 1 (calibrate, 32 รูปจาก `02-dataset/calib/images/`) ผ่านสมบูรณ์** — forward ครบ 32/32, เขียน `quant_info.json` สำเร็จ
+- **Pass 2 (`--quant_mode test --deploy`, export เป็น XIR xmodel) ล้มเหลว** — **ไม่ถึงขั้นรัน `vai_c_xir` ด้วยซ้ำ** พังตั้งแต่ขั้น nndct แปลง traced graph → XIR graph (`export_xmodel` / `dump_xmodel`)
+
+**Error เต็ม:**
+```
+[VAIQ_ERROR][QUANTIZER_TORCH_EXPORT_XMODEL]: Failed convert graph 'YOLO26nBackboneHead' to xmodel.
+...
+nndct_shared.utils.exception.AddXopError: Failed to add op(
+  name:YOLO26nBackboneHead::YOLO26nBackboneHead/C2PSA[model]/ModuleList[10]/Sequential[m]/PSABlock[0]/Attention[attn]/22573,
+  type:nndct_elemwise_mul) in xGraph.: 'Caught an unknown exception!'
+```
+(ก่อนหน้านั้นมี `[VAIQ_WARN]: YOLO26nBackboneHead::<id> is not tensor.` อีก 10 บรรทัด สำหรับ id แถว `model.10` และ `model.22` — สอดคล้องกับ node ในบล็อก attention ทั้งสองจุด)
+
+log เต็ม: `03-model/track-b-yolo26n-target/quantize/export_xmodel_FAIL_2026-09-05.log` (pass 1 log: `quantize_calib_pass1_2026-09-05.log`)
+
+**อ่าน error นี้ยังไง — ทำไมยัง "ตรงจุดเดิม" ที่ M2-B1 ทำนายไว้:**
+
+ดู `Attention.forward` (`yolo26n_dpu.py:159`):
+```python
+attn = (q.transpose(-2, -1) @ k) * self.scale   # <- op ที่พัง: elemwise_mul
+attn = attn.softmax(dim=-1)
+```
+`self.scale` เป็น **python float คงที่** (`key_dim ** -0.5`) ไม่ใช่ tensor/weight ที่ผ่าน quantizer — พอ nndct พยายามสร้าง `nndct_elemwise_mul` (fixed-point binary op) จาก tensor (ผลจาก matmul, ผ่าน quant) คูณกับ scalar constant ตัวนี้ ตัว `xgraph.create_fixed_normal_op` ใน C++ layer โยน exception ที่ไม่มีข้อความอธิบาย (`'Caught an unknown exception!'`) — เป็น edge case ที่ nndct's XIR converter ไม่รองรับ ไม่ใช่บั๊กใน `yolo26n_dpu.py`
+
+**นี่คือ node แรกสุดของ path attention ที่ M2-B1 ชี้ไว้ (`model.10` = `C2PSA[model]`) — ยืนยันตรงเป๊ะว่าจุดที่ตกคือ attention block ตามที่วิเคราะห์จาก ONNX/source ไว้ก่อนหน้า เพียงแต่ตัวที่ตกจริงคือ scale-multiply ก่อนถึง softmax ไม่ใช่ matmul หรือ softmax เอง**
+
+**สรุปตามตารางตัดสินในบรีฟ:** ผลออกมาเป็นแถว **"compile error — มี op ที่ compiler ปฏิเสธตรงๆ"** — เป็น contribution ของ track นี้ตามที่ตกลงไว้ ไม่ใช่ความล้มเหลวของงาน
+
+**ยังไม่ได้ลอง:** เปลี่ยน `* self.scale` เป็นคูณก่อน matmul (`(q * (self.scale ** 0.5)).transpose(-2,-1) @ (k * (self.scale ** 0.5))`) เผื่อเลี่ยง binary-op-กับ-scalar-constant นี้ได้ — ยังไม่ verify ว่าจะเปลี่ยนผลลัพธ์เชิงตัวเลขหรือไม่ (ต้องเช็ค bit-exact ใหม่ถ้าจะลอง) → ทิ้งไว้เป็นข้อเสนอสำหรับคนที่ทำต่อ ไม่ใช่ทำต่อในรอบนี้เพราะบรีฟระบุว่า compile error ก็เป็น finding ที่ปิดคำถามได้แล้ว

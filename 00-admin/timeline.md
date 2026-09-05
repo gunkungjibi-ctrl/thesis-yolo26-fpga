@@ -12,7 +12,8 @@
 
 - **ระบบหลัก (KV260) ทำงานครบวงจรบนบอร์ดจริงแล้ว** และเก็บผลวัดครบ 4 หมวด: accuracy / latency / power / counting
 - **โจทย์หลักผ่าน:** นับกล่องบนคลิป 600 วินาที ได้ **215/215 = error 0.0%** เทียบ ground truth
-- เหลือ **M2-B3** (compile YOLO26n ปิดคำถามวิจัย Track B) · **M14** (finalize รายงาน) · M13 optional
+- **M2-B3 เสร็จแล้ว (2026-09-05)** — YOLO26n compile ไม่ผ่าน แต่รู้สาเหตุระดับ op เป๊ะ (attention scale-multiply) → ปิดคำถามวิจัย Track B
+- เหลือ **M14** (finalize รายงาน) · M13 optional
 
 ### ตัวเลขผลการทดลองที่ได้แล้ว
 
@@ -50,13 +51,13 @@
 | M10 | **Phase 2 — tracking + line-crossing counting** | `video_dump_dets.py` → `count_offline.py --sweep`: axis=x, line=0.40·W, max_dist=60 → **นับ 215/215 = 0% error** | ✅ |
 | M11 | **Phase 3 — benchmark เทียบ GPU baseline** | `05-benchmarks/results/kv260_results.md` — ครบ 4 หมวด (accuracy / latency / power / counting) + เทียบ GPU 2 operating point | ✅ |
 | M12 | Profiling หา bottleneck | `bench_latency.py` — **PS-bound**: preproc 49.7 ms = 63% ของ pipeline, DPU แค่ 16% | ✅ |
+| M2-B3 | Track B: compile YOLO26n ด้วย `vai_c_xir` จริง | รันจริงบนเดสก์ท็อป (env ตรง spec) — pass 1 calibrate ผ่าน, pass 2 export XIR ล้มที่ op `nndct_elemwise_mul` ใน `Attention[attn]` (`model.10`, scale-multiply ก่อน softmax) — **ไม่ถึงขั้นรัน `vai_c_xir`**. ตรง node แรกของ attention ที่ M2-B1 ชี้ไว้ → ปิดคำถามด้วย "compile error" ตามตารางตัดสินในบรีฟ. รายละเอียด `artifacts/inspect_report/FINDINGS_op_analysis.md` ภาคผนวก M2-B3 | ✅ |
 
 ## งานถัดไป (เรียงตาม critical path)
 
 | # | งาน | เกณฑ์ผ่าน | ติดบล็อก? | สถานะ |
 |---|---|---|---|---|
-| **M2-B3** | **Track B: compile YOLO26n ด้วย `vai_c_xir` จริง** | รู้จำนวน subgraph จริงจาก compile log (คาด 3) หรือได้ error message ระบุ op ที่ตก | ไม่ | ☐ **ลำดับ 1** — ไม่ต้องใช้บอร์ด, น้ำหนักพร้อม (`yolo26n_leaky_pkg_ft.pt` mAP 0.831), สคริปต์พร้อม (TARGET = B4096), คาดใช้เวลาระดับชั่วโมง. **สำคัญเพราะเราตั้งกติกาเองว่า "gate เดียวที่นับคือ `vai_c_xir` ไม่ใช่ op histogram"** — ผลออกทางไหนก็เป็น finding ทั้งคู่ |
-| M14 | รายงาน + สไลด์ป้องกัน | ส่งครบ | ไม่ | 🟡 **กำลังทำ** — ร่างบท Results เสร็จ (`RESULTS_chapter_draft.md`, 6 ตาราง) + ชุดเอกสารอาจารย์ `00-admin/advisor-brief/` (12 ไฟล์) เสร็จ · เหลือ ขัดสำนวน + ใส่รูป + บทอื่นๆ ของเล่ม |
+| M14 | รายงาน + สไลด์ป้องกัน | ส่งครบ | ไม่ | 🟡 **กำลังทำ — งานหลักที่เหลืออยู่ตอนนี้** — ร่างบท Results เสร็จ (`RESULTS_chapter_draft.md`, 6 ตาราง) + ชุดเอกสารอาจารย์ `00-admin/advisor-brief/` (12 ไฟล์) เสร็จ · เหลือ ขัดสำนวน + ใส่รูป + บทอื่นๆ ของเล่ม + เขียนผล M2-B3 เข้าบท Track B |
 | M13 | (Optional) custom accelerator / optimize preprocessing | speedup วัดได้เทียบ baseline | ไม่ | ☐ **optional — ไม่ผูกเป็นเงื่อนไขจบ** · เป้าที่ชัดที่สุดคือ preproc 49.7 ms (port เป็น C++ / NEON SIMD / hardware scaler ใน PL): ถ้าลดเหลือ 10 ms → e2e 78.3 → 38.6 ms = **12.8 → 25.9 FPS (+103%)** |
 
 ## หมายเหตุ
