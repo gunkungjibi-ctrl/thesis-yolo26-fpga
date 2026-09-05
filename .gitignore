@@ -1,8 +1,6 @@
 # data / weights / build artifacts
 02-dataset/raw/
 02-dataset/calib/
-*.pt
-*.onnx
 *.xmodel
 *.bit
 *.xclbin
