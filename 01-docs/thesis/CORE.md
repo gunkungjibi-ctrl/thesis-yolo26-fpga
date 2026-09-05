@@ -1,7 +1,7 @@
 # แก่นของโครงงาน (Core Content) — ร่าง M14 ชิ้นที่ 0
 
 **หัวข้อ:** Real-Time Video-Based Object Counting on FPGA Using YOLO
-**ร่างวันที่:** 23 สิงหาคม 2026 · สถานะเนื้อหา: ผลการทดลองครบ 4 หมวดแล้ว · เหลือ Track B compile จริง
+**ร่างวันที่:** 23 สิงหาคม 2026 (อัปเดต 5 กันยายน 2026) · สถานะเนื้อหา: ผลการทดลองครบ 4 หมวด + Track B compile จริงแล้ว — เหลือเรียบเรียงเป็นเล่ม (M14)
 
 > ไฟล์นี้คือ **เนื้อโครงงานล้วน ๆ** ยังไม่แบ่งบท ไม่มีสำนวนรายงาน ไม่มีคำนำ/กิตติกรรมประกาศ
 > จุดประสงค์: ตรวจว่า "แก่น" แข็งแรงพอจะขึ้นเป็นเล่มหรือยัง — อ่านจบแล้วต้องตอบได้ว่า
@@ -18,7 +18,8 @@ DPUCZDX8G_ISA1_B4096) ด้วย Vitis AI 3.0 แล้วต่อยอด�
 บนคลิป 10 นาที โดยจ่ายค่าความแม่นยำจาก INT8 quantization เพียง **1.5% mAP** และใช้พลังงาน
 **น้อยกว่า GPU 6.3 เท่า** ที่ประสิทธิภาพพลังงาน **ดีกว่า 2.1 เท่า**; นอกจากนี้ยังระบุได้เจาะจงว่า
 **YOLO26n map ลง DPU รุ่นนี้ไม่ได้ทั้งตัวเพราะ attention block 2 จุดกลางกราฟ ไม่ใช่เพราะ NMS-free head
-อย่างที่คาดกันทั่วไป** ซึ่งเป็นองค์ความรู้ที่ยังไม่มีรายงานสาธารณะ
+อย่างที่คาดกันทั่วไป** — ยืนยันแล้วด้วย compile จริง (`vai_c_xir`) ที่ระบุถึงระดับ op ตัวเดียวที่ตกไม่ผ่าน
+(elementwise scale-multiply ก่อน softmax ใน attention block แรก) ซึ่งเป็นองค์ความรู้ที่ยังไม่มีรายงานสาธารณะ
 
 ---
 
@@ -44,7 +45,7 @@ DPUCZDX8G_ISA1_B4096) ด้วย Vitis AI 3.0 แล้วต่อยอด�
 
 | # | คำถาม | คำตอบที่ได้จากการทดลอง | หลักฐาน |
 |---|---|---|---|
-| RQ1 | YOLO รุ่นใหม่ deploy ลง DPU stack เดิมได้แค่ไหน ติดข้อจำกัดอะไร | YOLOv8n ผ่านเต็ม (1 DPU subgraph) · YOLO26n **ติดที่ attention 2 จุดกลางกราฟ ไม่ใช่ NMS-free head** | §7 · §8.4 |
+| RQ1 | YOLO รุ่นใหม่ deploy ลง DPU stack เดิมได้แค่ไหน ติดข้อจำกัดอะไร | YOLOv8n ผ่านเต็ม (1 DPU subgraph) · YOLO26n **compile จริงแล้วไม่ผ่าน — ตกที่ scale-multiply ใน attention block แรก ไม่ใช่ NMS-free head** | §7 · §8.4 |
 | RQ2 | INT8 quantization เสียความแม่นยำเท่าไร คุ้มกับพลังงานที่ประหยัดหรือไม่ | mAP@0.5 ตก **1.5%** แลกกับพลังงานน้อยลง **6.3×** → คุ้มชัดเจน | §6 ตาราง B |
 | RQ3 | เมื่อวัดทั้งระบบ (ไม่ใช่แค่ตัวเร่ง) คอขวดจริงอยู่ที่ไหน | **CPU (ARM PS) ไม่ใช่ DPU** — preprocess 63% ของ pipeline, DPU แค่ 16% | §6 ตาราง C, D |
 | RQ4 | ระบบนับแม่นแค่ไหนเทียบกับที่คนนับ | **215/215 = error 0.0%** และเสถียรใน parameter band (error <3%) | §6 ตาราง F |
@@ -239,7 +240,7 @@ float mAP 0.885 ตรงกับผล validate มาตรฐานบน Co
 
 ---
 
-## 7. Track B — YOLO26n: ผลวิเคราะห์ (สถานะ: ยังไม่ compile จริง)
+## 7. Track B — YOLO26n: ผลวิเคราะห์ + compile จริง (ปิด RQ1 แล้ว)
 
 **เครื่องมือที่ควรใช้ (nndct Inspector) ใช้ไม่ได้** เพราะ environment ในคอนเทนเนอร์แยก Python คนละเวอร์ชัน
 (Vitis AI 3.0 = py3.7 ส่วน ultralytics รุ่นที่โหลด YOLO26 ได้ต้องการ py3.9+) → **จึงวิเคราะห์ ONNX op graph เอง**
@@ -275,8 +276,51 @@ attention ที่ 32% และ 69%:      [DPU]-[attn]-[DPU]-[attn]-[DPU]--> o
 **op ที่ตรวจแล้วไม่ใช่ปัญหา:** MaxPool×3 (~28%, SPPF) ✅ · Resize×2 (~37%/~46%, FPN upsample nearest) ✅ ·
 Sigmoid×1 (~99.6%) ✅ — การตัดตัวเลือกออกสำคัญเท่ากับการหาตัวที่มีปัญหา
 
-**ยังเหลือ:** compile จริงด้วย `vai_c_xir` เพื่อปิดตามกติกาของตัวเอง — ออกทางไหนก็เป็น finding
-(เห็น `DPU subgraph number 3` = ยืนยัน mechanism · เห็น error ระบุ op = ยืนยันตรงกว่าเดิม + ได้ error เป็นหลักฐาน)
+### 7.1 Compile จริงด้วย `vai_c_xir` (M2-B3, 5 กันยายน 2026) — ผลคือ error ที่ระบุ op ได้เจาะจง
+
+ก่อน compile ได้ต้องแก้ blocker ที่ไม่เกี่ยวกับ DPU ก่อน 2 เรื่อง: (1) `ultralytics` (จำเป็นต่อการโหลด
+YOLO26) import ไม่ได้ใน env py3.7 ที่มี `pytorch_nndct` → เขียนกราฟ `YOLO26nBackboneHead` เป็น PyTorch
+ล้วนแยกจาก ultralytics, ตรวจแล้วโหลด state dict จริงได้ **bit-exact** (`max|diff| = 0.000e+00` ทั้ง 3 หัว
+หลังแก้ BatchNorm eps ให้ตรงกับที่ ultralytics ตั้งไว้ตอนเทรน) (2) เขียนกราฟด้วย slicing แทน
+`chunk`/`split` ตั้งแต่ต้น เพื่อเลี่ยง `XIR don't support multi-outputs op` ที่เคยทำ Track A ล้มมาก่อน
+
+**รันจริงในคอนเทนเนอร์ Vitis AI 3.0 (env `vitis-ai-pytorch`, py3.7.12 / torch 1.12.1) ด้วยน้ำหนัก
+fine-tuned จริงและภาพ calibration จริง 208 ภาพ:**
+
+| ขั้น | ผล |
+|---|---|
+| Pass 1 — calibrate (nndct, 32 ภาพ) | ✅ ผ่านสมบูรณ์ |
+| Pass 2 — export XIR xmodel (`--quant_mode test --deploy`) | ❌ **ล้มก่อนถึงขั้นรัน `vai_c_xir` ด้วยซ้ำ** |
+
+Error เต็ม (nndct แปลง traced graph → XIR graph):
+
+```
+[VAIQ_ERROR][QUANTIZER_TORCH_EXPORT_XMODEL]: Failed convert graph 'YOLO26nBackboneHead' to xmodel.
+AddXopError: Failed to add op(
+  name:.../C2PSA[model]/.../PSABlock[0]/Attention[attn]/22573,
+  type:nndct_elemwise_mul) in xGraph.: 'Caught an unknown exception!'
+```
+
+**อ่านผลนี้อย่างไร:** node ที่ตกคือ op แรกสุดของ attention block แรกพอดี (`model.10` = `C2PSA`) ตรงกับ
+บรรทัด `attn = (q.transpose(-2,-1) @ k) * self.scale` ใน source ของ ultralytics — **`self.scale` เป็น
+python float คงที่ ไม่ใช่ tensor** พอ nndct พยายามสร้าง fixed-point binary op จาก (ผลลัพธ์ matmul ที่ผ่าน
+quantizer) × (scalar constant) ตัวแปลง XIR ของ nndct ไม่รองรับ edge case นี้ จึงล้มด้วย exception ที่ไม่มี
+ข้อความอธิบาย ก่อนที่ compiler `vai_c_xir` (ซึ่งเป็น binary คนละตัว รันทีหลัง) จะมีโอกาสได้ทำงานเลยด้วยซ้ำ
+
+**สิ่งที่ผลนี้ยืนยันและสิ่งที่มันแก้ไข**
+
+- ✅ **ยืนยัน mechanism ที่ทำนายไว้ใน (1)–(2) ข้างบน 100%** — จุดที่ตกคือ attention block เป๊ะ ไม่ใช่ตำแหน่งอื่น
+- 🔧 **แก้ไขรายละเอียด:** จุดที่ตกจริงคือ **scale-multiply ก่อน softmax** ไม่ใช่ MatMul(data×data) หรือ
+  Softmax เองตามที่วิเคราะห์จาก ONNX ไว้ตอนแรก — เป็นรายละเอียดที่ ONNX op histogram มองไม่เห็น (มันเห็น
+  แค่ว่ามี `Mul` node หนึ่งตัวอยู่ตรงนั้น ไม่รู้ว่าตัวคูณเป็น constant หรือ tensor) **การ compile จริงจึงให้
+  ข้อมูลที่ลึกกว่าการวิเคราะห์ static graph** และเป็นเหตุผลที่กติกาของโครงงานตั้ง `vai_c_xir` เป็น gate เดียว
+  ที่นับ ไม่ใช่ op histogram
+- ตามตารางตัดสินที่ตั้งไว้ล่วงหน้า (ก่อนรัน): ผลออกมาตรงแถว **"compile error — มี op ที่ compiler
+  ปฏิเสธตรงๆ → จดชื่อ op ให้ครบ = contribution ของ track นี้"** — เป็นผลที่ปิด RQ1 ได้ ไม่ใช่ความล้มเหลว
+  ของโครงงาน
+
+log เต็ม: `03-model/track-b-yolo26n-target/quantize/export_xmodel_FAIL_2026-09-05.log` ·
+รายละเอียด: `03-model/track-b-yolo26n-target/artifacts/inspect_report/FINDINGS_op_analysis.md` §M2-B3
 
 ---
 
@@ -286,7 +330,7 @@ Sigmoid×1 (~99.6%) ✅ — การตัดตัวเลือกออก�
 |---|---|---|
 | F1 | **INT8 quantization แทบไม่ทำให้ความแม่นยำเสีย** (mAP −1.5%) แต่ประหยัดพลังงาน 6.3x | ตอบ RQ2 ด้วยตัวเลข 2 ฝั่งจาก pipeline เดียวกัน |
 | F2 | **คอขวดอยู่ที่ CPU ไม่ใช่ตัวเร่ง AI** — DPU กินเวลาแค่ 16% ของ pipeline | ยืนยันด้วยหลักฐาน 2 ชิ้นที่วัดคนละวิธี (latency + power) → ชี้ทิศทาง optimization ชัด |
-| F3 | **YOLO26 ติดที่ attention กลางกราฟ ไม่ใช่ NMS-free head** และ *ตำแหน่ง* สำคัญกว่า *ชนิด* ของ op | องค์ความรู้ใหม่ — YOLO26 ไม่อยู่ใน Vitis AI Model Zoo จึงยังไม่มีใครรายงาน |
+| F3 | **YOLO26 compile จริงแล้วไม่ผ่าน — ตกที่ scale-multiply (`nndct_elemwise_mul`) ก่อน softmax ใน attention block แรก ไม่ใช่ NMS-free head** ยืนยันด้วย error log จริง ไม่ใช่แค่การวิเคราะห์ ONNX | องค์ความรู้ใหม่ระดับ op — YOLO26 ไม่อยู่ใน Vitis AI Model Zoo จึงยังไม่มีใครรายงานถึงระดับนี้ |
 | F4 | **ระบบนับใช้งานได้จริงที่ ~5 W** — 215/215 พร้อม sensitivity analysis | ตอบ RQ4 ระดับ end-to-end ไม่ใช่แค่ detection metric |
 | F5 | **activation swap ไม่ทำให้ accuracy ตกถ้า fine-tune พอ** (0.884 หลังสลับ SiLU→LeakyReLU) | ทำให้ข้อจำกัดของ DPU กลายเป็นต้นทุนเวลา ไม่ใช่ต้นทุนคุณภาพ |
 
@@ -313,7 +357,7 @@ Sigmoid×1 (~99.6%) ✅ — การตัดตัวเลือกออก�
 | **การนับวัดบนคลิปเดียว** (600 วิ, 1 มุมกล้อง) | 0.0% ไม่ generalize ข้ามฉาก | มี sensitivity analysis ครอบ parameter band · ระบุว่าการตั้งเส้นเป็น calibration ต่อกล้อง |
 | **การวัดพลังงานไม่สมมาตร** | FPGA วัดทั้งบอร์ด (INA260 ราง SOM) · GPU วัดเฉพาะชิป (nvidia-smi) | เป็นการเทียบที่ **เสียเปรียบฝั่ง FPGA** → ข้อสรุปยังปลอดภัย ระบุไว้ชัด |
 | **เทียบ INT8 กับ FP32** | ไม่ใช่ apples-to-apples ด้าน precision | ตาราง B แสดงต้นทุนความแม่นยำของ INT8 อย่างชัดเจน เพื่อให้ผู้อ่านชั่งเองได้ |
-| **Track B ยังไม่ compile จริง** | ข้อสรุป "3 subgraph" ยังเป็นการวิเคราะห์ ไม่ใช่ผลจาก gate ที่ตั้งเอง | งานลำดับ 1 ที่เหลือ · ระบุสถานะตรง ๆ ว่าเป็น prediction ที่มี mechanism รองรับ |
+| **Track B compile ไม่ผ่าน (ผลจริง ไม่ใช่แค่ prediction แล้ว)** | ไม่ได้ตัวเลข "กี่ subgraph" ตามที่คาดไว้ตอนแรก เพราะ nndct ล้มก่อนถึงขั้นเรียก `vai_c_xir` — ได้ error ระบุ op แทน | ตรงตามกติกาตัดสินที่ตั้งไว้ล่วงหน้าว่า compile error ก็นับเป็น finding ปิด RQ1 ได้ · ยังไม่ได้ลองแก้ `* self.scale` เพื่อดูว่าจะ compile ผ่านต่อได้ไหม (ทิ้งไว้เป็นข้อเสนอ §11) |
 | **แอปจริงยังไม่เรียลไทม์** (10 FPS จาก 30 fps ของวิดีโอ) | ยังไม่ real-time เต็ม 30 fps | เป็นผลของ F2 โดยตรง · มีทางแก้ที่ระบุแล้ว (§11) |
 | **สภาพแวดล้อมควบคุม** | แสง/มุมกล้อง/ความเร็วสายพานคงที่ | ระบุเป็นขอบเขต ไม่เคลมเกิน |
 
@@ -322,13 +366,15 @@ Sigmoid×1 (~99.6%) ✅ — การตัดตัวเลือกออก�
 ## 11. งานที่เหลือและทิศทางต่อยอด
 
 **เหลือเพื่อปิดโครงงาน:**
-1. **compile YOLO26n จริง** (`vai_c_xir`, TARGET B4096) → ปิด RQ1 ตามกติกาของตัวเอง — น้ำหนักพร้อม (mAP 0.831), ไม่ต้องใช้บอร์ด
-2. **เรียบเรียงเป็นเล่ม + สไลด์** (M14)
+1. **เรียบเรียงเป็นเล่ม + สไลด์** (M14) — งานหลักที่เหลืออยู่ตอนนี้
 
 **ทิศทางต่อยอดที่มีตัวเลขรองรับ:**
 - **แก้คอขวด preprocess** (F2): port เป็น C++ / NEON SIMD / hardware scaler ใน PL —
   ถ้าลด 49.7 ms → 10 ms จะได้ e2e 78.3 → 38.6 ms = **12.8 → 25.9 FPS (+103%)** โดยไม่ต้องแตะ DPU
 - **cross-platform** (Efinix Ti375) — ทดสอบว่า F2 เป็นสมบัติของ DPU/ARM คู่นี้ หรือเป็นรูปแบบทั่วไปของ edge SoC
+- **ลอง workaround scale-multiply ใน `Attention`** (§7.1): เปลี่ยน `(q@k) * self.scale` เป็นคูณ
+  `q` และ `k` ด้วย `sqrt(self.scale)` ก่อน matmul แทน เผื่อเลี่ยง binary-op-กับ-scalar-constant ที่ nndct
+  แปลงไม่ได้ — ยังไม่ verify ตัวเลข ต้องเช็ค bit-exact ใหม่ถ้าจะลอง ไม่ใช่งานบังคับสำหรับปิดเล่ม
 
 ---
 
@@ -343,19 +389,19 @@ Sigmoid×1 (~99.6%) ✅ — การตัดตัวเลือกออก�
 - ✅ **กติกาตัดสินตั้งไว้ล่วงหน้า** และไม่แก้ระหว่างทาง → กันข้อครหาว่าปรับเกณฑ์ให้ผ่าน
 
 **จุดที่ยังเปราะ (เรียงตามความน่าจะโดนถาม)**
-1. 🔴 **Track B ยังไม่ผ่าน gate ของตัวเอง** — นี่คือจุดที่กรรมการจะจิ้มก่อน เพราะชื่อโครงงานมีคำว่า YOLO26
-   → **ต้องทำให้เสร็จ** ไม่ใช่แค่เขียนอธิบาย
-2. 🟠 **ชุดข้อมูลเล็ก** (208/57/28) — ต้องเขียนข้อจำกัดไว้เอง และ *อย่า* เคลม mAP เกินระดับที่ set นี้รองรับ
-3. 🟠 **การนับวัดคลิปเดียว** — ถ้ามีเวลา ควรตัดคลิปที่ 2 จากวิดีโอ 12 ชม. ต้นฉบับมานับมือเพิ่ม
+1. 🟠 **ชุดข้อมูลเล็ก** (208/57/28) — ต้องเขียนข้อจำกัดไว้เอง และ *อย่า* เคลม mAP เกินระดับที่ set นี้รองรับ
+2. 🟠 **การนับวัดคลิปเดียว** — ถ้ามีเวลา ควรตัดคลิปที่ 2 จากวิดีโอ 12 ชม. ต้นฉบับมานับมือเพิ่ม
    (แม้แค่ 300 วิ) จะทำให้ RQ4 แข็งขึ้นมาก ด้วยต้นทุนต่ำ
-4. 🟡 **ยังไม่มีงานวิจัยที่เกี่ยวข้องเป็นรูปเป็นร่าง** — ยังไม่มีการ position งานนี้เทียบ prior work
+3. 🟡 **ยังไม่มีงานวิจัยที่เกี่ยวข้องเป็นรูปเป็นร่าง** — ยังไม่มีการ position งานนี้เทียบ prior work
    (`06-references/` ยังว่าง) เป็นช่องว่างเดียวที่ *ไม่ใช่* งานทดลอง แต่จำเป็นสำหรับเล่ม
-5. 🟡 **ยังไม่ได้รันเทียบ latency ของ Efinix** — ส่วนขยายจึงยังเป็นเชิงคุณภาพ
+4. 🟡 **ยังไม่ได้รันเทียบ latency ของ Efinix** — ส่วนขยายจึงยังเป็นเชิงคุณภาพ
+5. 🟢 *(ปิดแล้ว 5 ก.ย. 2026)* ~~Track B ยังไม่ผ่าน gate~~ — compile จริงแล้ว (§7.1) ได้ error ที่ระบุ op
+   เจาะจง (`nndct_elemwise_mul` ใน scale-multiply ก่อน softmax) ตรงตามกติกาตัดสินที่ตั้งไว้ล่วงหน้าว่า
+   compile error ก็ปิด RQ1 ได้ — เดิมเป็นจุดที่กรรมการน่าจะจิ้มก่อนเพราะชื่อโครงงานมีคำว่า YOLO26
 
-**ข้อสรุปการประเมิน:** แก่นด้าน **ผลการทดลองแข็งพอสำหรับเล่มแล้ว** (4 มิติ + baseline + sensitivity +
-mechanism) จุดอ่อนที่เหลือมี 2 ประเภทเท่านั้น — (ก) งานที่ *รู้วิธีทำแล้วและใช้เวลาไม่มาก*
-(compile Track B, คลิปที่ 2) และ (ข) งานเขียน (related work) ซึ่งไม่มีความเสี่ยงเชิงเทคนิค
-**ไม่มีจุดอ่อนที่ต้องกลับไปทดลองใหม่ทั้งหมด**
+**ข้อสรุปการประเมิน:** แก่นด้าน **ผลการทดลองแข็งพอสำหรับเล่มแล้วและปิดครบทุกคำถามวิจัย** (4 มิติ +
+baseline + sensitivity + mechanism + Track B compile จริง) จุดอ่อนที่เหลือทั้งหมดเป็นงานเขียน/เสริม
+(related work, คลิปที่ 2, Efinix) ไม่มีความเสี่ยงเชิงเทคนิคและ**ไม่มีจุดอ่อนที่ต้องกลับไปทดลองใหม่ทั้งหมด**
 
 ---
 
@@ -366,7 +412,7 @@ mechanism) จุดอ่อนที่เหลือมี 2 ประเภ
 | ผลวัดดิบทั้ง 4 หมวด | `05-benchmarks/results/kv260_results.md` |
 | ร่างบทผลการทดลอง (6 ตาราง) | `05-benchmarks/results/RESULTS_chapter_draft.md` |
 | GPU baseline | `05-benchmarks/gpu-baseline/results_fp32_final.json` |
-| Track B op analysis | `00-admin/advisor-brief/08-track-b-yolo26.md` · `FINDINGS_op_analysis.md` |
+| Track B op analysis + compile log จริง | `00-admin/advisor-brief/08-track-b-yolo26.md` · `03-model/track-b-yolo26n-target/artifacts/inspect_report/FINDINGS_op_analysis.md` · `03-model/track-b-yolo26n-target/quantize/export_xmodel_FAIL_2026-09-05.log` |
 | สถานะ milestone (source of truth) | `00-admin/timeline.md` |
 | สคริปต์วัดบนบอร์ด | `04-deploy/board/` (bench_latency, measure_power, infer_dump, video_dump_dets) |
 | สคริปต์ประเมินฝั่ง host | `05-benchmarks/results/` (eval_map, infer_float, count_offline) |
