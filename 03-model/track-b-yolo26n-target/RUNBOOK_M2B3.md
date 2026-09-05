@@ -26,7 +26,12 @@
 
 ---
 
-## ขั้นที่ 1 — บนเครื่อง host (Windows, env py3.9+ ที่ D:)
+## ขั้นที่ 1 — บนเครื่อง host (Windows, env py3.9+ ที่ D:) — **ข้ามได้**
+
+> ⏭️ **ขั้นนี้รันไปแล้วและ commit ผลไว้ให้**: `quantize/yolo26n_pkg_state_dict.pt`
+> สร้างจาก `finetune/yolo26n_leaky_pkg_ft.pt` ตัวจริง ผ่าน check ครบ **`max|diff| = 0.000e+00`** (bit-exact)
+> ถ้าไม่ได้เปลี่ยน checkpoint ก็ **ข้ามไปขั้นที่ 2 ได้เลย**
+> รันซ้ำเมื่อ fine-tune ใหม่ หรืออยากตรวจเองอีกรอบ
 
 ใช้ venv เดิมที่ `D:\yolo26-export-env` (มี ultralytics 8.4.71 อยู่แล้ว)
 
@@ -39,12 +44,26 @@ python export_yolo26n_state_dict.py \
     --out yolo26n_pkg_state_dict.pt
 ```
 
-**สิ่งที่ต้องเห็นก่อนไปต่อ:**
+**สิ่งที่ต้องเห็นก่อนไปต่อ** (ผลจริงจากน้ำหนัก fine-tuned ตัวจริง):
 ```
 [ok] state_dict loaded 1:1 into yolo26n_dpu.YOLO26nBackboneHead (708 tensors)
-[ok] standalone graph matches ultralytics, max|diff| = <ค่าน้อยกว่า 1e-4>
+[ok] BatchNorm (eps, momentum) matches: [(0.001, 0.03)]
+[ok] LeakyReLU slope matches: [0.1015625]
+[ok] standalone graph matches ultralytics, max|diff| = 0.000e+00
 ```
 ถ้า abort ตรงนี้ **อย่าไปต่อ** — แปลว่า checkpoint ไม่ใช่ YOLO26n scale n หรือโครงต่างจากที่ resolve ไว้
+
+> ### 🐛 บทเรียนจากการ bring-up ไฟล์นี้ — ทำไมถึงต้องมี check ตัวนี้
+>
+> รอบแรกที่รันกับ checkpoint จริง **ผลต่างถึง 2.7** ทั้งที่ state_dict โหลดครบ 708 tensors แบบ `strict=True`
+> ไล่ทีละเลเยอร์แล้วเจอว่าเพี้ยนตั้งแต่ **layer 0 (Conv ตัวแรกสุด)** — conv output ตรงกัน 0.0 แต่หลัง BN ต่างไป 5.7
+>
+> สาเหตุ: **ultralytics `initialize_weights()` ตั้ง `BatchNorm2d.eps = 1e-3` (PyTorch default = `1e-5`)**
+> `eps` **ไม่ใช่พารามิเตอร์** → ไม่อยู่ใน state_dict → โหลด strict ผ่านฉลุยแต่คำนวณคนละค่า
+>
+> ถ้าไม่มี numerical check ตัวนี้ เราจะ quantize กราฟที่ผิดโดยไม่มีอะไรเตือนเลย แล้วได้ `.xmodel` ที่ compile ผ่าน
+> แต่ผลลัพธ์ผิด — และจะไปโผล่เป็น "INT8 accuracy ตก" ตอนอยู่บนบอร์ด ซึ่งไล่ย้อนยากมาก
+> ตอนนี้สคริปต์เช็ค `eps`/`momentum`/slope แยกต่างหากด้วย เพื่อให้บอกสาเหตุได้ ไม่ใช่แค่บอกว่าต่าง
 
 > ยังไม่ต้องมีน้ำหนัก fine-tuned ก็ซ้อมได้: ใส่ `--weights yolo26n.yaml --nc 80` จะได้กราฟเปล่า
 > แต่ **ห้ามเอาผล accuracy จากน้ำหนักเปล่าไปเขียนรายงาน** — ใช้ซ้อม flow เท่านั้น
@@ -153,6 +172,7 @@ op ไหนขึ้น device `USER` / `CPU` = ตกไปรันบน ARM
 | ไฟล์ | รันที่ไหน | ทำอะไร |
 |---|---|---|
 | `quantize/yolo26n_dpu.py` | ทั้งสองที่ | กราฟ YOLO26n standalone (py3.7 + torch 1.12 safe, ไม่มี chunk/split) |
+| `quantize/yolo26n_pkg_state_dict.pt` | **container** | น้ำหนักที่ verify แล้ว (bit-exact) — สร้างไว้ให้แล้ว |
 | `quantize/export_yolo26n_state_dict.py` | **host** py3.9+ | .pt → plain state_dict + พิสูจน์ว่ากราฟตรง ultralytics |
 | `quantize/quantize_yolo26n_dpu.py` | **container** py3.7 | calib + export `_int.xmodel` |
 | `compile/compile_yolo26n.sh` | **container** | `vai_c_xir` = gate + parse subgraph count |

@@ -127,4 +127,22 @@
 - **หมายเหตุ 2 หัว:** `end2end: True` ทำให้มีทั้ง `cv2/cv3` (o2m, คู่กับ NMS) และ `one2one_cv2/cv3` (NMS-free). flow นี้ default เป็น o2m ให้เทียบ Track A ได้ตรง · เลือกอีกหัวด้วย `--use_one2one`
 - dry-run ทั้ง flow ด้วย nndct stub → calib loop + jit.trace + export path ผ่านหมด ไม่มีบั๊ก
 - เขียน `RUNBOOK_M2B3.md` (6 ขั้น + ตารางตัดสิน) · เพิ่ม parse `DPU subgraph number N` อัตโนมัติใน `compile_yolo26n.sh` · เคลียร์คอมเมนต์ B3136/B4096 ที่ค้างใน compile script (P1 ปิดไปแล้ว) · ใส่หัวเตือนใน `quantize_yolo26n_pytorch.py` ว่าใช้ไม่ได้
-- **ทำต่อ:** รัน `RUNBOOK_M2B3.md` บนเดสก์ท็อป (ต้องใช้ `yolo26n_leaky_pkg_ft.pt` ตัวจริง ซึ่ง `.gitignore` กันไว้ไม่อยู่ใน repo) → ได้ `vai_c_xir` log = ปิด M2-B3
+## 2026-09-05 (ต่อ) — user push น้ำหนักขึ้น git แล้ว → verify ด้วย checkpoint จริง เจอบั๊กเงียบ
+
+user เอา `.pt`/`.onnx` ทั้งหมด (ใหญ่สุด 13MB) ขึ้น git (commit `691c084`, ตัด 2 บรรทัดออกจาก `.gitignore`) → merge เข้ามาแล้วรัน verify ด้วย `yolo26n_leaky_pkg_ft.pt` ตัวจริง
+
+- **รอบแรกไม่ผ่าน — และดีที่ไม่ผ่าน:** `max|diff| = 2.7` ทั้งที่ state_dict โหลดครบ 708 tensors แบบ `strict=True`
+  (ตอนทดสอบด้วย `yolo26n.yaml` เปล่าได้ 3.8e-06 จึงไม่เห็นปัญหา — บั๊กโผล่เฉพาะกับน้ำหนักจริง)
+- **ไล่ทีละเลเยอร์เจอว่าเพี้ยนตั้งแต่ layer 0** (Conv ตัวแรกสุด): conv output ตรงกัน `0.0` แต่หลัง BN ต่าง `5.7`
+- **root cause: `BatchNorm2d.eps`** — ultralytics `initialize_weights()` ตั้ง `eps=1e-3, momentum=0.03` ทับ default ของ PyTorch (`1e-5`, `0.1`)
+  ตรวจ checkpoint: BN ทั้ง **114 ตัวเป็น `eps=0.001, momentum=0.03`** ครบ
+  **`eps` ไม่ใช่พารามิเตอร์ → ไม่อยู่ใน state_dict → `strict=True` ผ่านฉลุยแต่คำนวณคนละค่า**
+- **แก้:** เพิ่ม `BN_EPS=1e-3` / `BN_MOMENTUM=0.03` ใน `yolo26n_dpu.py` + เพิ่ม check แยกใน `export_yolo26n_state_dict.py`
+  ที่เทียบ `(eps, momentum)` ของ BN และ slope ของ LeakyReLU ตรงๆ เพื่อให้ครั้งหน้า**บอกสาเหตุได้ ไม่ใช่แค่บอกว่าต่าง**
+- **ผลหลังแก้: `max|diff| = 0.000e+00` — bit-exact ทั้ง 3 หัว** กับน้ำหนัก fine-tuned ตัวจริง
+- **ความสำคัญ:** ถ้าไม่มี numerical check นี้ เราจะ quantize กราฟที่ผิดเงียบๆ ได้ `.xmodel` ที่ compile ผ่านแต่ผลผิด
+  แล้วจะไปโผล่เป็น "INT8 accuracy ตก" ตอนอยู่บนบอร์ด ซึ่งไล่ย้อนยากมาก (เทียบ M5 ที่เคยเสียเวลาขุด cos_sim)
+- **cross-check ที่ได้เพิ่ม:** traced graph ของ checkpoint จริงมี **softmax 2 + matmul(data×data) 4** = attention 2 จุด × (2 matmul + 1 softmax) ตรงกับ M2-B1 เป๊ะ
+- commit `yolo26n_pkg_state_dict.pt` (verify แล้ว) เข้า repo → ขั้นที่ 1 ของ runbook ข้ามได้ เข้าคอนเทนเนอร์ได้เลย
+- dry-run flow เต็มด้วยน้ำหนักจริง + calib จริง 8 รูป (nndct stub) → ผ่านทั้ง 2 pass
+- **ทำต่อ:** รัน `RUNBOOK_M2B3.md` ขั้น 2–6 บนเครื่องที่มี Docker → ได้ `vai_c_xir` log = ปิด M2-B3

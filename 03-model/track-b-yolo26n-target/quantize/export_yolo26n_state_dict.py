@@ -107,6 +107,31 @@ def main():
         raise SystemExit(1)
     print("[ok] state_dict loaded 1:1 into yolo26n_dpu.YOLO26nBackboneHead (%d tensors)" % len(sd))
 
+    # ---- non-parameter settings, which a state_dict cannot carry ----
+    # ultralytics' initialize_weights() overrides BatchNorm eps/momentum and
+    # LeakyReLU slope. None of them are parameters, so a strict load succeeds
+    # while the model computes different numbers. Check them explicitly: the
+    # numerical test below would catch it too, but this names the cause.
+    def bn_settings(mod):
+        return set((round(m.eps, 12), round(m.momentum, 12))
+                   for m in mod.modules() if isinstance(m, nn.BatchNorm2d))
+
+    def act_slopes(mod):
+        return set(round(m.negative_slope, 12)
+                   for m in mod.modules() if isinstance(m, nn.LeakyReLU))
+
+    ref_bn, got_bn = bn_settings(inner), bn_settings(model)
+    if ref_bn != got_bn:
+        raise SystemExit("[FATAL] BatchNorm (eps, momentum) mismatch: checkpoint %s vs standalone %s\n"
+                         "        Fix BN_EPS / BN_MOMENTUM in yolo26n_dpu.py." % (sorted(ref_bn), sorted(got_bn)))
+    print("[ok] BatchNorm (eps, momentum) matches: %s" % sorted(ref_bn))
+
+    ref_act, got_act = act_slopes(inner), act_slopes(model)
+    if ref_act and ref_act != got_act:
+        raise SystemExit("[FATAL] LeakyReLU slope mismatch: checkpoint %s vs standalone %s\n"
+                         "        Fix DPU_LEAKY_SLOPE in yolo26n_dpu.py." % (sorted(ref_act), sorted(got_act)))
+    print("[ok] LeakyReLU slope matches: %s" % sorted(ref_act))
+
     # ---- numerical equivalence check ----
     torch.manual_seed(0)
     x = torch.randn(1, 3, args.imgsz, args.imgsz)

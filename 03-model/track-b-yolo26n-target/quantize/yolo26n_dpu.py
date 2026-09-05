@@ -55,6 +55,14 @@ import torch.nn as nn
 # format, which plain 0.1 is not. Same value Track A fine-tuned against.
 DPU_LEAKY_SLOPE = 0.1015625
 
+# ultralytics' initialize_weights() overrides the torch defaults on every
+# BatchNorm2d, and these are NOT parameters, so they do not travel in a
+# state_dict: a strict load succeeds and the model still computes different
+# numbers. Getting this wrong shifted layer 0's output by 5.7 during bring-up
+# of this file. Keep them in sync with ultralytics.utils.torch_utils.
+BN_EPS = 1e-3
+BN_MOMENTUM = 0.03
+
 
 def autopad(k, p=None, d=1):
     """'same' padding, matching ultralytics.nn.modules.conv.autopad."""
@@ -71,7 +79,7 @@ class Conv(nn.Module):
     def __init__(self, c1, c2, k=1, s=1, p=None, g=1, d=1, act=True):
         super(Conv, self).__init__()
         self.conv = nn.Conv2d(c1, c2, k, s, autopad(k, p, d), groups=g, dilation=d, bias=False)
-        self.bn = nn.BatchNorm2d(c2)
+        self.bn = nn.BatchNorm2d(c2, eps=BN_EPS, momentum=BN_MOMENTUM)
         if act is True:
             self.act = nn.LeakyReLU(DPU_LEAKY_SLOPE, inplace=True)
         elif isinstance(act, nn.Module):
