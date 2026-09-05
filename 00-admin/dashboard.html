@@ -424,7 +424,7 @@
     {id:'P1',s:'done',board:false,t:'เคลียร์ B3136 vs B4096',g:'arch จริง = B4096 · แก้ให้ตรงทุกไฟล์'},
     {id:'M2-B1',s:'done',board:false,t:'Track B: วิเคราะห์ op ของ YOLO26n',g:'ตัวบล็อก = attention 2 จุด (MatMul+Softmax)'},
     {id:'M2-B2',s:'done',board:false,t:'Track B: fine-tune หลัง SiLU→LeakyReLU',g:'v8n mAP50 0.884 · 26n 0.831 (Colab T4)'},
-    {id:'M2-B3',s:'todo',board:false,t:'Track B: compile YOLO26n → gate',g:'รัน vai_c_xir จริง → รู้จำนวน subgraph (คาด 3)'},
+    {id:'M2-B3',s:'done',board:false,t:'Track B: compile YOLO26n → gate',g:'รัน vai_c_xir จริง → รู้จำนวน subgraph (คาด 3)'},
     {id:'M4',s:'done',board:false,t:'VART host code (น้ำหนักสูงสุด)',g:'C++ compile-check + yolo_dpu_detect.py รันบนบอร์ด'},
     {id:'M5',s:'done',board:false,t:'Verify quantization fidelity',g:'INT8 mAP drop 1.5% (0.8846 → 0.8713)'},
     {id:'M6',s:'done',board:false,t:'Boot image + DPU firmware checklist',g:'PetaLinux starter kit · fingerprint 0x101000056010407 ตรง'},
@@ -437,7 +437,7 @@
     {id:'M13',s:'todo',board:false,t:'(Optional) custom accel / optimize preproc',g:'preproc 49.7→10 ms ⇒ 12.8→25.9 FPS'},
     {id:'M14',s:'todo',board:false,t:'รายงาน + สไลด์ป้องกัน',g:'ร่าง Results + advisor brief เสร็จ · เหลือเล่ม'}
   ];
-  var META={pct:85,done:17,ready:3,blocked:0,total:20,updated:'23 ส.ค. 2026'};
+  var META={pct:90,done:18,ready:2,blocked:0,total:20,updated:'23 ส.ค. 2026'};
   /*==MILESTONES:END==*/
 
   // ---- apply META to KPI + header ----
