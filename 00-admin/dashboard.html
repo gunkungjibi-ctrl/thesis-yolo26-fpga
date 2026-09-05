@@ -207,7 +207,7 @@
     <div class="topmeta">
       <button class="themebtn" id="themebtn" type="button">◐ สลับธีม</button>
       <span class="statuspill" style="--blocked:var(--done)"><span class="pulse"></span>สถานะระบบ: <b>รันครบวงจรบนบอร์ดจริง · M0–M12 ✓</b></span>
-      <span class="statuspill" style="font-weight:500;color:var(--muted)">อัปเดต <span id="updated">23 ส.ค. 2026</span></span>
+      <span class="statuspill" style="font-weight:500;color:var(--muted)">อัปเดต <span id="updated">5 ก.ย. 2026</span></span>
     </div>
   </header>
 
@@ -218,22 +218,22 @@
       <div class="ringwrap">
         <svg width="62" height="62" viewBox="0 0 62 62" id="ring" aria-hidden="true"></svg>
         <div class="ringtxt">
-          <div class="val" id="pct">85<small>%</small></div>
-          <div class="foot" id="fracfoot">17 / 20 milestone</div>
+          <div class="val" id="pct">90<small>%</small></div>
+          <div class="foot" id="fracfoot">18 / 20 milestone</div>
         </div>
       </div>
     </div>
     <div class="card kpi">
       <span class="stripe" style="background:var(--done)"></span>
       <div class="lab">เสร็จแล้ว</div>
-      <div class="val" id="k-done">17</div>
-      <div class="foot">M0–M12 + P0·P1 (ยกเว้น M2-B3)</div>
+      <div class="val" id="k-done">18</div>
+      <div class="foot">M0–M12 + P0·P1 + M2-B3</div>
     </div>
     <div class="card kpi">
       <span class="stripe" style="background:var(--active)"></span>
       <div class="lab">เหลือทำ</div>
-      <div class="val" id="k-ready">3</div>
-      <div class="foot">M2-B3 · M14 · M13 (optional)</div>
+      <div class="val" id="k-ready">2</div>
+      <div class="foot">M14 · M13 (optional)</div>
     </div>
     <div class="card kpi">
       <span class="stripe" style="background:var(--blocked)"></span>
@@ -289,10 +289,10 @@
           <div class="track">
             <div class="track-h">
               <span class="tn"><span class="k">Track B</span> YOLO26n</span>
-              <span class="badge b-active">⏳ เหลือ compile gate (M2-B3)</span>
+              <span class="badge b-done">✓ compile จริงแล้ว (M2-B3) — ไม่ผ่าน gate</span>
             </div>
-            <p>fine-tune แล้ว (mAP50 0.831) · วิเคราะห์ op แล้ว: <b>NMS-free head ไม่ใช่ปัญหา</b> — ตัวบล็อกคือ <b>attention 2 จุด</b> (model.10 / model.22: MatMul+Softmax) ที่ DPU map ไม่ได้ → คาดตัดเป็น ~3 subgraph · <b>ถ้าล้มก็ยังเป็น contribution</b></p>
-            <div class="mono">เหลือ: vai_c_xir จริง → ยืนยันจำนวน subgraph + วัด latency penalty</div>
+            <p>fine-tune แล้ว (mAP50 0.831) · compile จริงด้วย <b>vai_c_xir</b> แล้ว: <b>NMS-free head ไม่ใช่ปัญหา</b> — ล้มที่ <b>scale-multiply ก่อน softmax</b> ใน attention block แรก (<code>nndct_elemwise_mul</code>) ยืนยัน mechanism ที่ M2-B1 ทำนายไว้ · <b>ปิด RQ1 ด้วย compile error = contribution</b></p>
+            <div class="mono">ผล: AddXopError ที่ C2PSA/Attention — พังก่อนถึงขั้นรัน vai_c_xir ด้วยซ้ำ · log: export_xmodel_FAIL_2026-09-05.log</div>
           </div>
         </div>
       </section>
@@ -383,16 +383,15 @@
       <span class="note">ระบบหลักเสร็จแล้ว · ที่เหลือคือส่วนขยาย + รายงาน</span>
     </div>
     <div class="next-list">
-      <div class="step"><div class="n">01</div><div class="st">M2-B3 · compile YOLO26n</div><div class="sd">รัน vai_c_xir จริงในคอนเทนเนอร์ (ไม่ต้องใช้บอร์ด) · น้ำหนัก+สคริปต์พร้อม · ระดับชั่วโมง — ปิดคำถาม "แน่ใจได้ไงว่าตัดเป็น 3 subgraph"</div></div>
-      <div class="step"><div class="n">02</div><div class="st">M14 · finalize บทรายงาน</div><div class="sd">ขัดสำนวนบท Results + ใส่รูป (detect_out_pkg_kv260.jpg, out20.mp4) + เขียนบทที่เหลือ</div></div>
-      <div class="step"><div class="n">03</div><div class="st">Efinix E1 · gate แรก</div><div class="sd">ติดตั้ง Efinity + build Sapphire SoC + รัน TinyML demo ที่เครื่องที่มีบอร์ด (E3-A เสร็จแล้ว parity 59/59)</div></div>
-      <div class="step"><div class="n">04</div><div class="st">M13 · optimize preprocessing (optional)</div><div class="sd">preproc 49.7 ms = 63% ของ pipeline · ถ้าลดเหลือ 10 ms → 12.8 → 25.9 FPS (+103%) = ปิดวงจรข้อค้นพบ</div></div>
+      <div class="step"><div class="n">01</div><div class="st">M14 · finalize บทรายงาน</div><div class="sd">ขัดสำนวนบท Results + ใส่รูป (detect_out_pkg_kv260.jpg, out20.mp4) + เขียนบทที่เหลือ + ใส่ผล M2-B3 เข้า Track B — งานหลักที่เหลืออยู่ตอนนี้</div></div>
+      <div class="step"><div class="n">02</div><div class="st">Efinix E1 · gate แรก</div><div class="sd">ติดตั้ง Efinity + build Sapphire SoC + รัน TinyML demo ที่เครื่องที่มีบอร์ด (E3-A เสร็จแล้ว parity 59/59)</div></div>
+      <div class="step"><div class="n">03</div><div class="st">M13 · optimize preprocessing (optional)</div><div class="sd">preproc 49.7 ms = 63% ของ pipeline · ถ้าลดเหลือ 10 ms → 12.8 → 25.9 FPS (+103%) = ปิดวงจรข้อค้นพบ</div></div>
     </div>
   </section>
 
   <footer>
     <span>ที่มา: 00-admin/timeline.md · 05-benchmarks/results/kv260_results.md · 00-admin/advisor-brief/</span>
-    <span>อัปเดต 2026-08-23 · thesis-yolo26-fpga</span>
+    <span>อัปเดต 2026-09-05 · thesis-yolo26-fpga</span>
   </footer>
 </div>
 
@@ -437,7 +436,7 @@
     {id:'M13',s:'todo',board:false,t:'(Optional) custom accel / optimize preproc',g:'preproc 49.7→10 ms ⇒ 12.8→25.9 FPS'},
     {id:'M14',s:'todo',board:false,t:'รายงาน + สไลด์ป้องกัน',g:'ร่าง Results + advisor brief เสร็จ · เหลือเล่ม'}
   ];
-  var META={pct:90,done:18,ready:2,blocked:0,total:20,updated:'23 ส.ค. 2026'};
+  var META={pct:90,done:18,ready:2,blocked:0,total:20,updated:'5 ก.ย. 2026'};
   /*==MILESTONES:END==*/
 
   // ---- apply META to KPI + header ----
@@ -485,8 +484,8 @@
 
   // ---- risk register ----
   var risks=[
-    {sev:'md',stat:'open',statx:'ยังไม่ทดสอบ',t:'M2-B3: YOLO26n อาจ compile ไม่ผ่าน gate',d:'ผลออกทางไหนก็เป็น finding · Track A ครบวงจรแล้ว ไม่กระทบการจบโครงงาน'},
-    {sev:'md',stat:'open',statx:'ยังไม่เริ่ม',t:'M14: เหลือขัดสำนวน + ใส่รูป + บทอื่นของเล่ม',d:'ร่างบท Results (6 ตาราง) + ชุดเอกสารอาจารย์ 12 ไฟล์ เสร็จแล้ว'},
+    {sev:'lo',stat:'mit',statx:'ปิดแล้ว M2-B3',t:'YOLO26n compile ไม่ผ่าน gate — ยืนยันแล้วด้วย vai_c_xir จริง',d:'ล้มที่ scale-multiply ก่อน softmax ใน attention block แรก (nndct_elemwise_mul) · Track A ครบวงจรแล้ว ไม่กระทบการจบโครงงาน'},
+    {sev:'md',stat:'open',statx:'ยังไม่เริ่ม',t:'M14: เหลือขัดสำนวน + ใส่รูป + บทอื่นของเล่ม',d:'ร่างบท Results (6 ตาราง) + ชุดเอกสารอาจารย์ 12 ไฟล์ เสร็จแล้ว · ใส่ผล M2-B3 เข้า Track B แล้ว'},
     {sev:'md',stat:'ext',statx:'external',t:'Efinix E1 ต้องทำที่เครื่องที่มี Efinity + บอร์ด',d:'มีคู่มือ RUN_ON_EFINITY_MACHINE.md เตรียมไว้ · เป็นส่วนขยาย ไม่ผูกการจบ'},
     {sev:'lo',stat:'mit',statx:'ปิดแล้ว M9',t:'fingerprint ของ image อาจไม่ตรง 0x101000056010407',d:'PetaLinux starter kit → xdputil query ตรงเป๊ะ ไม่ต้อง re-compile'},
     {sev:'lo',stat:'mit',statx:'ปิดแล้ว P0',t:'artifact ถูก gitignore (backup กายภาพเท่านั้น)',d:'กู้ออกจาก WSL แล้ว 162 ไฟล์ · ผลวัดทั้งหมดเก็บครบบนเดสก์ท็อป'},
