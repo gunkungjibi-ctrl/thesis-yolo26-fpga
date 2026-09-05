@@ -20,9 +20,32 @@
 
 **ทางแก้ที่ใช้:** ตัด ultralytics ออกจากคอนเทนเนอร์ทั้งหมด → `quantize/yolo26n_dpu.py` เขียนกราฟ YOLO26n ด้วย PyTorch ล้วน (syntax py3.7, ใช้เฉพาะ op ที่มีใน torch 1.12) น้ำหนักส่งเข้าเป็น plain state_dict
 
-**ทำไมเชื่อได้ว่ากราฟตรง:** `export_yolo26n_state_dict.py` โหลด state_dict เข้ากราฟ standalone แบบ `strict` แล้ว**เทียบตัวเลข output กับ ultralytics ทุกครั้งที่รัน** ถ้าไม่ตรงมันจะ abort — ตรวจแล้วได้ `max|diff| = 3.8e-06` (= noise ของ float32) จาก 708 tensors
+**ทำไมเชื่อได้ว่ากราฟตรง:** `export_yolo26n_state_dict.py` โหลด state_dict เข้ากราฟ standalone แบบ `strict` แล้ว**เทียบตัวเลข output กับ ultralytics ทุกครั้งที่รัน** ถ้าไม่ตรงมันจะ abort — รันกับ `yolo26n_leaky_pkg_ft.pt` ตัวจริงแล้วได้ **`max|diff| = 0.000e+00` (bit-exact)** จาก 708 tensors
 
 **ของแถมที่ได้มาด้วย:** กราฟนี้เขียนโดยใช้ **slicing แทน `chunk`/`split`** ตั้งแต่ต้น → ตัดปัญหา `XIR don't support multi-outputs op` ที่เคยทำ Track A ล้ม (worklog 16 ส.ค.) ทิ้งไปเลย ตรวจ traced graph แล้วไม่มี `aten::chunk` / `aten::split` / `aten::split_with_sizes` / `aten::unbind` เหลือสักตัว
+
+---
+
+## ขั้นที่ 0 — เตรียมก่อนเริ่ม
+
+**ประเมินเวลารวม 1–3 ชม.** ส่วนใหญ่คือรอ quantize บน CPU · **ไม่ต้องใช้บอร์ด**
+
+```powershell
+cd <repo>
+git pull origin claude/project-status-summary-iytv45
+```
+
+เช็กว่ามีไฟล์ครบ (อยู่ใน `03-model/track-b-yolo26n-target/`):
+
+| ไฟล์ | ขนาด | หน้าที่ |
+|---|---|---|
+| `quantize/yolo26n_dpu.py` | 16 KB | กราฟ YOLO26n standalone |
+| `quantize/yolo26n_pkg_state_dict.pt` | 10 MB | น้ำหนัก verify แล้ว bit-exact ✅ |
+| `quantize/quantize_yolo26n_dpu.py` | 7 KB | ตัวรัน nndct 2 pass |
+| `compile/compile_yolo26n.sh` | 4 KB | `vai_c_xir` = gate |
+
+**calib images** — ต้องเป็นภาพสายพานจริง 32+ รูป ใช้ `02-dataset/calib/images/` (208 รูป บนเครื่องคุณ)
+ถ้าหาไม่เจอ ใช้ `02-dataset/detection/train/images/` แทนได้ — **เนื้อหาเดียวกัน** และอยู่ใน repo
 
 ---
 
