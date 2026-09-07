@@ -27,3 +27,9 @@ desktop.ini
 
 # oversized build artifacts (exceed GitHub 100MB limit)
 tmp_tflite_int8_calibration_images.npy
+
+# M13 pl-preproc: test vectors / tb binary / HLS project (gen ใหม่ได้ด้วย make)
+04-deploy/pl-preproc/hls/vectors/
+04-deploy/pl-preproc/hls/tb_preproc
+04-deploy/pl-preproc/hls/proj_preproc_accel/
+04-deploy/pl-preproc/host/*.so

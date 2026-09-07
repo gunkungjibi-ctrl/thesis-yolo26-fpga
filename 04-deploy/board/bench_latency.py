@@ -104,7 +104,16 @@ def main():
     ap.add_argument("--warmup", type=int, default=10)
     ap.add_argument("--iters", type=int, default=100)
     ap.add_argument("--conf", type=float, default=0.25)
+    ap.add_argument("--preproc", default="numpy", choices=("numpy", "lut", "hw"),
+                    help="M13: numpy=โค้ดเดิม (baseline), lut=cv2.LUT, hw=PL accelerator (ดู preproc_lib.py)")
+    ap.add_argument("--xclbin", default=None, help="xclbin ที่มี preproc_accel (โหมด hw)")
     args = ap.parse_args()
+    if args.preproc != "numpy":
+        from preproc_lib import make_preprocessor
+        pp = make_preprocessor(args.preproc, args.xclbin)
+    else:
+        pp = preprocess
+    print("[info] preproc mode = %s" % args.preproc)
 
     g = xir.Graph.deserialize(args.xmodel)
     runner = vart.Runner.create_runner(get_dpu(g), "run")
@@ -119,7 +128,7 @@ def main():
     for i in range(args.warmup + args.iters):
         rec = i >= args.warmup
         s0 = time.perf_counter()
-        inp = preprocess(bgr, in_scale)
+        inp = pp(bgr, in_scale)
         s1 = time.perf_counter()
         obuf = [np.empty(tuple(t.dims), np.int8) for t in ot]
         job = runner.execute_async([inp], obuf)

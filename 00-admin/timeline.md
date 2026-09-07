@@ -58,7 +58,7 @@
 | # | งาน | เกณฑ์ผ่าน | ติดบล็อก? | สถานะ |
 |---|---|---|---|---|
 | M14 | รายงาน + สไลด์ป้องกัน | ส่งครบ | ไม่ | 🟡 **กำลังทำ — งานหลักที่เหลืออยู่ตอนนี้** — ร่างบท Results เสร็จ (`RESULTS_chapter_draft.md`, 6 ตาราง) + ชุดเอกสารอาจารย์ `00-admin/advisor-brief/` (12 ไฟล์) เสร็จ · เหลือ ขัดสำนวน + ใส่รูป + บทอื่นๆ ของเล่ม + เขียนผล M2-B3 เข้าบท Track B |
-| M13 | (Optional) custom accelerator / optimize preprocessing | speedup วัดได้เทียบ baseline | ไม่ | ☐ **optional — ไม่ผูกเป็นเงื่อนไขจบ** · เป้าที่ชัดที่สุดคือ preproc 49.7 ms (port เป็น C++ / NEON SIMD / hardware scaler ใน PL): ถ้าลดเหลือ 10 ms → e2e 78.3 → 38.6 ms = **12.8 → 25.9 FPS (+103%)** |
+| M13 | (Optional) custom accelerator / optimize preprocessing | speedup วัดได้เทียบ baseline | ไม่ | 🟡 **optional — ไม่ผูกเป็นเงื่อนไขจบ** · **7 ก.ย.: ออกแบบ + verify บน host เสร็จ** (ขั้นถัดไปต้องมี Vitis 2022.2 สำหรับ synth + บอร์ดสำหรับวัด) — `04-deploy/pl-preproc/` HLS kernel (resize+BGR→RGB+quantize ใน PL) **bit-exact กับ cv2 0 mismatch** (57 รูป × 3 ขนาด, C testbench 8 เคสผ่าน) + host lib XRT + `--preproc numpy/lut/hw` ในสคริปต์วัด · **ค้นพบ:** 49.7 ms ส่วนใหญ่คือ numpy float path ไม่ใช่ resize → โหมด `lut` (SW) เร็วขึ้น 8.7× บน x86 โดยไม่แตะ PL → M13 ต้องวัด 3 จุด numpy/lut/hw · **เหลือ:** csynth/bitstream บนเครื่องที่มี Vitis + วัดจริงบนบอร์ด (เกณฑ์: COUNT ยัง 215, FPS ขึ้น) |
 
 ## หมายเหตุ
 

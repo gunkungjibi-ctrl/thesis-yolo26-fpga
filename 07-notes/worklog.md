@@ -160,3 +160,17 @@ user เอา `.pt`/`.onnx` ทั้งหมด (ใหญ่สุด 13MB) 
 - log เต็ม: `quantize/export_xmodel_FAIL_2026-09-05.log` (pass 1: `quantize_calib_pass1_2026-09-05.log`) · เขียนเข้า `FINDINGS_op_analysis.md` ภาคผนวก M2-B3 แล้ว
 - **M2-B3 เสร็จ (ผลคือ compile error ที่ระบุ op ได้ชัด)** → เหลือ M14 (finalize รายงาน) เป็นงานหลักที่เหลือ
 - **ทำต่อ:** รัน `RUNBOOK_M2B3.md` ขั้น 2–6 บนเครื่องที่มี Docker → ได้ `vai_c_xir` log = ปิด M2-B3
+
+## 2026-09-07 — M13 (optional): ออกแบบ PL preprocessing accelerator + verify บน host
+
+โจทย์จาก M12: preproc 49.7 ms (63%) บน PS → ทำตัวเร่งใน PL แทน `preprocess()` ทั้งก้อน (resize → BGR→RGB → /255 → quantize int8) · โค้ดทั้งหมดใน `04-deploy/pl-preproc/` (README อธิบายละเอียด)
+
+- **kernel Vitis HLS** `hls/preproc_accel.cpp` — เขียนด้วย C มาตรฐาน + pragma (g++ compile ได้) · line buffer 2 แถว reuse · II=1 ต่อ pixel (3 ch ขนาน) · ตารางพิกัด/น้ำหนัก/LUT ให้ host คำนวณส่งเป็น int16×4096 → ใน PL ไม่มี float
+- **เป้า = bit-exact กับ cv2** (ไม่งั้นต้องวัด mAP/นับใหม่หมด) → ต้อง reverse สูตรจริงของ `resize.cpp`:
+  1. vertical blend ที่ cv2 ใช้จริงคือ path SIMD `((h>>4)·b)>>16` แล้ว `(t0+t1+2)>>2` — สูตร scalar ตามเอกสาร `(…+2^21)>>22` ต่าง ~10% ของพิกเซล (±1)
+  2. ขอบแกน x clamp น้ำหนักเป็น 2048/0 แต่**แกน y ไม่ clamp** (ใช้ 92/1956 แล้ว clip index แถว) — รอบแรกทำเหมือนกันสองแกนเลยพลาด ±1 ที่แถวบน/ล่างตอน upscale (จับได้จากเคส 1032×582)
+- **ผล verify:** golden model vs cv2 = **0 mismatch** ทั้ง u8 และ int8 (11 ขนาดต้นทาง synthetic + valid set 57 รูป × 640×640/640×360/1920×1080 = 210M ค่า) · C model ของ kernel vs golden = PASS ทุกไบต์ 8 เคส (`make test`)
+- **host side:** `host/preproc_xrt.cpp` (XRT native API → `.so`, compile-check ด้วย stub header) + `preproc_accel.py` (ctypes) + `board/preproc_lib.py` เลือกโหมด `numpy/lut/hw` · เพิ่ม `--preproc` ใน `bench_latency.py` / `video_detect.py` (default = โค้ดเดิม ไม่กระทบผลที่วัดไว้) · `bench_preproc.py --verify` วัดแยกโหมดและเช็กว่าตรงกัน
+- **ข้อค้นพบสำคัญ (ต้องซื่อสัตย์ในเล่ม):** รูป valid set เป็น 640×640 อยู่แล้ว → 49.7 ms ที่วัดเป็น **numpy float path ไม่ใช่ resize** · โหมด `lut` (cv2.LUT แทน float) ให้ผลตรงกันทุกไบต์และเร็วกว่า 8.7× บน x86 → บน A53 น่าจะเหลือ ~4–8 ms **โดยไม่ต้องแตะ PL** → M13 ต้องรายงาน 3 จุด numpy → lut → hw และ HW ต้องชนะ `lut` ถึงจะอ้างได้
+- **ประมาณการ HW (ยังไม่วัด):** ~2.2 ms PL @300 MHz สำหรับ 640×360 (+ ~1 ms memcpy) → e2e ≈ 32 ms ≈ 31 FPS
+- **ยังไม่ได้ทำ (ต้องมี tool/บอร์ด):** `vitis_hls -f run_hls.tcl` (csynth/timing/resource) → link เข้า overlay `kv260-benchmark-b4096` ผ่าน kria-vitis-platforms (`vitis/preproc_link.cfg`, ห้ามแก้ dpu_conf.vh ให้ fingerprint เดิม) → firmware app ใหม่ → build `.so` บนบอร์ด → วัด `bench_preproc.py --verify` + `video_detect.py --preproc hw` (COUNT ต้องยัง 215)

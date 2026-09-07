@@ -91,3 +91,4 @@ Track A ทำให้โครงงาน**จบได้แล้ว** · T
 1. **M14** — finalize บทรายงาน + สไลด์ (งานหลักที่เหลืออยู่ตอนนี้)
 2. **Efinix E1** — ติดตั้ง Efinity + build Sapphire SoC ที่เครื่องที่มีบอร์ด
 3. *(optional)* **M13** — optimize preprocessing: 49.7 → 10 ms ⇒ e2e 12.8 → 25.9 FPS
+   · 🟡 **7 ก.ย.:** PL accelerator ออกแบบเสร็จ `04-deploy/pl-preproc/` (HLS kernel bit-exact กับ cv2 + XRT host lib) · เหลือ synth/bitstream + วัดบนบอร์ด · พบว่าโหมด `lut` (SW ล้วน) น่าจะเก็บ gain ส่วนใหญ่ได้ก่อน — ต้องวัด 3 จุด numpy/lut/hw

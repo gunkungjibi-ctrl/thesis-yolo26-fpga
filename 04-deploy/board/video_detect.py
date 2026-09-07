@@ -147,7 +147,16 @@ def main():
     ap.add_argument("--max_frames", type=int, default=0)
     ap.add_argument("--no_video", action="store_true",
                     help="ไม่เขียน output video (นับอย่างเดียว เร็ว+ประหยัด RAM)")
+    ap.add_argument("--preproc", default="numpy", choices=("numpy", "lut", "hw"),
+                    help="M13: numpy=โค้ดเดิม (baseline), lut=cv2.LUT, hw=PL accelerator (preproc_lib.py)")
+    ap.add_argument("--xclbin", default=None, help="xclbin ที่มี preproc_accel (โหมด hw)")
     args = ap.parse_args()
+    if args.preproc != "numpy":
+        from preproc_lib import make_preprocessor
+        pp = make_preprocessor(args.preproc, args.xclbin)
+    else:
+        pp = None
+    print("[info] preproc mode = %s" % args.preproc)
 
     g = xir.Graph.deserialize(args.xmodel)
     runner = vart.Runner.create_runner(get_dpu(g), "run")
@@ -179,8 +188,11 @@ def main():
             w = read_w(psensor)
             if w is not None:
                 pw_samples.append(w)
-        rgb = cv2.cvtColor(cv2.resize(frame, (IMGSZ, IMGSZ)), cv2.COLOR_BGR2RGB)
-        inp = np.clip(np.round(rgb.astype(np.float32) / 255.0 * in_scale), -128, 127).astype(np.int8)[None]
+        if pp is None:   # baseline path เดิม (ผลที่วัดไว้ทั้งหมดใช้บรรทัดนี้)
+            rgb = cv2.cvtColor(cv2.resize(frame, (IMGSZ, IMGSZ)), cv2.COLOR_BGR2RGB)
+            inp = np.clip(np.round(rgb.astype(np.float32) / 255.0 * in_scale), -128, 127).astype(np.int8)[None]
+        else:
+            inp = pp(frame, in_scale)
         obuf = [np.empty(tuple(t.dims), np.int8) for t in ot]
         job = runner.execute_async([inp], obuf); runner.wait(job)
         dets = []
