@@ -10,10 +10,10 @@
 #   --src   : บังคับขนาดเฟรมต้นทางก่อนวัด (เช่น 640x360 = คลิปนับจริง, 1920x1080 = กล้อง)
 #   --verify: เทียบ output ทุกโหมดกับ numpy (baseline) → ต้อง mismatch = 0
 # ============================================================================
-import sys, time, argparse
+import os, sys, time, argparse
 import numpy as np
 import cv2
-from preproc_lib import make_preprocessor, MODES
+from preproc_lib import make_preprocessor, MODES, _preprocess_numpy
 
 
 def load_frame(path):
@@ -52,9 +52,12 @@ def main():
         bgr = cv2.resize(bgr, (w, h), interpolation=cv2.INTER_AREA)
     bgr = np.ascontiguousarray(bgr)
     in_scale = float(2 ** args.fixpos)
-    print("[bench_preproc] frame %dx%d  fixpos=%d  iters=%d" % (bgr.shape[1], bgr.shape[0], args.fixpos, args.iters))
+    print("[bench_preproc] frame %dx%d  fixpos=%d  iters=%d  cv2=%s  arch=%s"
+          % (bgr.shape[1], bgr.shape[0], args.fixpos, args.iters, cv2.__version__, os.uname().machine))
 
-    ref = None; med = {}
+    # reference = โค้ดเดิมเสมอ (ไม่ขึ้นกับลำดับใน --modes) → ทุกโหมดต้องตรงกับตัวนี้ทุกไบต์
+    ref = _preprocess_numpy(bgr, in_scale) if args.verify else None
+    med = {}; bad = 0
     for mode in args.modes.split(","):
         f = make_preprocessor(mode, args.xclbin)
         t = []
@@ -64,16 +67,17 @@ def main():
                 t.append(e - s)
         med[mode] = stats(mode, t)
         if args.verify:
-            if ref is None:
-                ref = out
-            else:
-                d = np.abs(out.astype(np.int16) - ref.astype(np.int16))
-                print("           verify vs numpy: mismatch=%d/%d  max|diff|=%d  -> %s"
-                      % (int((d != 0).sum()), d.size, int(d.max()), "OK" if d.max() == 0 else "FAIL"))
+            d = np.abs(out.astype(np.int16) - ref.astype(np.int16))
+            ok = int(d.max()) == 0
+            bad += 0 if ok else 1
+            print("           verify vs numpy: mismatch=%d/%d  max|diff|=%d  -> %s"
+                  % (int((d != 0).sum()), d.size, int(d.max()), "OK" if ok else "FAIL"))
     if "numpy" in med:
         for m, v in med.items():
             if m != "numpy":
                 print("[speedup] %s vs numpy: %.1fx  (%.2f -> %.2f ms)" % (m, med["numpy"] / v, med["numpy"], v))
+    if args.verify and bad:
+        sys.exit("[bench_preproc] %d mode(s) FAILED bit-exactness" % bad)
 
 
 if __name__ == "__main__":

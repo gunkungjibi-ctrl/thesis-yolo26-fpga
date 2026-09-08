@@ -19,13 +19,18 @@
 # usage:
 #   python3 preproc_golden.py check   [--sizes 640x360,1280x720,1920x1080] [--n 8]
 #   python3 preproc_golden.py gen <out_dir> [--src WxH] [--image path] [--fixpos 6]
-#   python3 preproc_golden.py sweep <image_dir> [--src WxH]
+#   python3 preproc_golden.py sweep <dir|image|video> [--src WxH] [--n N] [--stride S]
+#
+# ⚠️ sweep บน "บอร์ด" คือการเทสที่สำคัญที่สุดก่อนลงทุน synth: มันตรวจว่าสูตรที่
+#    reverse จาก resize.cpp ตรงกับ OpenCV build **ARM/NEON ของบอร์ด** ไม่ใช่แค่ x86
 # ============================================================================
 import os, sys, glob, argparse
 import numpy as np
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+# รองรับทั้ง layout ของ repo (../host) และ flat dir (ไฟล์กองรวมกัน — ตอน copy ขึ้นบอร์ด)
 sys.path.insert(0, os.path.join(HERE, "..", "host"))
+sys.path.insert(0, HERE)
 import preproc_tables as T  # noqa: E402
 
 try:
@@ -34,12 +39,15 @@ except Exception:
     cv2 = None
 
 
-def hpass(row_u32_or_u8, xo, a0, a1, src_w):
-    """row: [src_w,3] uint8 -> [640,3] int32 (horizontal linear, fixed-point)."""
-    sx0 = xo.astype(np.int64)
+def hpass(rows_u8, xo, a0, a1, src_w):
+    """rows: [n,src_w,3] uint8 -> [n,640,3] int32 (horizontal linear, fixed-point).
+
+    vectorized ทั้งภาพในครั้งเดียว — สำคัญตอนรันบน Cortex-A53 (loop ต่อแถวช้ากว่ามาก)
+    """
+    sx0 = xo.astype(np.intp)
     sx1 = np.minimum(sx0 + 1, src_w - 1)
-    r = row_u32_or_u8.astype(np.int32)
-    return r[sx0] * a0[:, None].astype(np.int32) + r[sx1] * a1[:, None].astype(np.int32)
+    r = rows_u8.astype(np.int32)
+    return r[..., sx0, :] * a0[:, None] + r[..., sx1, :] * a1[:, None]
 
 
 def model(bgr, params, mode="simd"):
@@ -55,9 +63,7 @@ def model(bgr, params, mode="simd"):
     lut = p[T.OFF_LUT:T.OFF_LUT + 256].astype(np.int8)
 
     # horizontal pass ครั้งเดียวต่อแถวต้นทาง (kernel ทำสดต่อ output row แต่ผลเท่ากัน)
-    H = np.empty((src_h, 640, 3), dtype=np.int32)
-    for y in range(src_h):
-        H[y] = hpass(bgr[y], xo, a0, a1, src_w)
+    H = hpass(bgr, xo, a0, a1, src_w)           # [src_h,640,3] int32
 
     sy0 = np.clip(yo, 0, src_h - 1)             # yofs อาจเป็น -1 (ขอบบนตอน upscale) — clip เหมือน cv2
     sy1 = np.clip(yo + 1, 0, src_h - 1)
@@ -161,21 +167,73 @@ def cmd_gen(args):
     return 0
 
 
+def iter_frames(path, n, stride, src):
+    """yield เฟรม BGR จากโฟลเดอร์รูป / ไฟล์รูป / ไฟล์วิดีโอ.
+
+    src=None -> ใช้ขนาดต้นฉบับ (สำคัญ: เทสด้วยขนาดจริงที่ระบบใช้ เช่นคลิป 640x360)
+    """
+    want = None if src in (None, "", "native") else tuple(int(v) for v in src.split("x"))
+
+    def fit(im):
+        if want and (im.shape[1], im.shape[0]) != want:
+            im = cv2.resize(im, want, interpolation=cv2.INTER_AREA)
+        return np.ascontiguousarray(im)
+
+    if os.path.isdir(path):
+        files = sorted(glob.glob(os.path.join(path, "*.jpg")) + glob.glob(os.path.join(path, "*.png")))
+        for f in files[::stride][:n]:
+            im = cv2.imread(f, cv2.IMREAD_COLOR)
+            if im is not None:
+                yield os.path.basename(f), fit(im)
+        return
+    im = cv2.imread(path, cv2.IMREAD_COLOR)
+    if im is not None:
+        yield os.path.basename(path), fit(im)
+        return
+    cap = cv2.VideoCapture(path)          # วิดีโอ
+    if not cap.isOpened():
+        sys.exit("cannot open %s" % path)
+    got = 0; idx = 0
+    while got < n:
+        ok, fr = cap.read()
+        if not ok:
+            break
+        if idx % stride == 0:
+            got += 1
+            yield "frame%06d" % idx, fit(fr)
+        idx += 1
+    cap.release()
+
+
 def cmd_sweep(args):
-    """รันโมเดลกับรูปจริงทั้งโฟลเดอร์ (ย่อ/ขยายเป็นขนาดต้นทางที่กำหนดก่อน) เทียบ cv2 path."""
+    """เทียบ golden model กับ cv2 ของ *เครื่องที่รันอยู่* บนรูป/วิดีโอจริง.
+
+    รันบนบอร์ด = ตรวจว่าสูตรที่ reverse ไว้ตรงกับ OpenCV build ARM/NEON ด้วย
+    (ที่ verify ตอนออกแบบเป็น x86 SIMD) — ต้องผ่านก่อนค่อยลงทุน synth
+    """
     if cv2 is None:
         sys.exit("sweep ต้องมี cv2")
-    w, h = (int(v) for v in args.src.split("x"))
     in_scale = float(2 ** args.fixpos)
-    prm = T.build_params(w, h, in_scale)
-    files = sorted(glob.glob(os.path.join(args.image_dir, "*.jpg")))[:args.n]
-    tot_mis = 0; tot = 0; worst = 0
-    for f in files:
-        im = load_source(f, w, h)
-        n, mx, sz = compare(model(im, prm, "simd"), reference_cv2(im, in_scale))
-        tot_mis += n; tot += sz; worst = max(worst, mx)
-    print("[sweep] %d images, src %dx%d: int8 mismatches %d / %d (%.6f%%), max|diff|=%d"
-          % (len(files), w, h, tot_mis, tot, 100.0 * tot_mis / max(tot, 1), worst))
+    prm = None; key = None
+    tot_mis = 0; tot = 0; worst = 0; nfr = 0; sizes = set()
+    first_bad = None
+    for name, im in iter_frames(args.image_dir, args.n, args.stride, args.src):
+        h, w = im.shape[:2]
+        if (w, h) != key:
+            key = (w, h); prm = T.build_params(w, h, in_scale)
+        sizes.add("%dx%d" % (w, h))
+        mis, mx, sz = compare(model(im, prm, "simd"), reference_cv2(im, in_scale))
+        tot_mis += mis; tot += sz; worst = max(worst, mx); nfr += 1
+        if mis and first_bad is None:
+            first_bad = (name, w, h, mis, mx)
+    if nfr == 0:
+        sys.exit("no frames read from %s" % args.image_dir)
+    print("[sweep] %d frames, src %s, cv2 %s (%s)"
+          % (nfr, ",".join(sorted(sizes)), cv2.__version__, os.uname().machine))
+    print("[sweep] int8 mismatches %d / %d (%.6f%%), max|diff|=%d  -> %s"
+          % (tot_mis, tot, 100.0 * tot_mis / max(tot, 1), worst, "PASS" if tot_mis == 0 else "FAIL"))
+    if first_bad:
+        print("[sweep] first bad frame: %s %dx%d mismatches=%d max=%d" % first_bad)
     return 0 if tot_mis == 0 else 1
 
 
@@ -186,8 +244,11 @@ def main():
     c.add_argument("--n", type=int, default=4); c.add_argument("--fixpos", type=int, default=6)
     g = sub.add_parser("gen"); g.add_argument("out_dir"); g.add_argument("--src", default="640x360")
     g.add_argument("--image", default=None); g.add_argument("--fixpos", type=int, default=6)
-    s = sub.add_parser("sweep"); s.add_argument("image_dir"); s.add_argument("--src", default="640x360")
-    s.add_argument("--n", type=int, default=1000); s.add_argument("--fixpos", type=int, default=6)
+    s = sub.add_parser("sweep"); s.add_argument("image_dir", help="โฟลเดอร์รูป / ไฟล์รูป / ไฟล์วิดีโอ")
+    s.add_argument("--src", default=None, help="WxH บังคับขนาดต้นทาง (ไม่ใส่ = ใช้ขนาดจริง)")
+    s.add_argument("--n", type=int, default=1000, help="จำนวนเฟรมสูงสุด")
+    s.add_argument("--stride", type=int, default=1, help="หยิบทุก N เฟรม (วิดีโอยาวใช้ 200 เพื่อกระจาย)")
+    s.add_argument("--fixpos", type=int, default=6)
     args = ap.parse_args()
     sys.exit({"check": cmd_check, "gen": cmd_gen, "sweep": cmd_sweep}[args.cmd](args))
 

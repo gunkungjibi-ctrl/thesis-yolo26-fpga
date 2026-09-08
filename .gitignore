@@ -33,3 +33,4 @@ tmp_tflite_int8_calibration_images.npy
 04-deploy/pl-preproc/hls/tb_preproc
 04-deploy/pl-preproc/hls/proj_preproc_accel/
 04-deploy/pl-preproc/host/*.so
+04-deploy/board/m13_board.tar.gz
