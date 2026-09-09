@@ -7,6 +7,7 @@
 # usage:
 #   python3 bench_preproc.py <image_or_video> [--modes numpy,lut,hw] [--iters 100]
 #                            [--fixpos 6] [--src WxH] [--verify]
+#   python3 bench_preproc.py --synth 640x640 --verify      # ไม่ต้องมีไฟล์สื่อบนบอร์ด
 #   --src   : บังคับขนาดเฟรมต้นทางก่อนวัด (เช่น 640x360 = คลิปนับจริง, 1920x1080 = กล้อง)
 #   --verify: เทียบ output ทุกโหมดกับ numpy (baseline) → ต้อง mismatch = 0
 # ============================================================================
@@ -27,6 +28,18 @@ def load_frame(path):
     return fr
 
 
+def synth_frame(w, h, seed=0):
+    """เฟรมสังเคราะห์ (gradient + noise + ขอบคม) — ใช้เมื่อยังไม่มีไฟล์สื่อบนบอร์ด."""
+    rng = np.random.RandomState(seed)
+    yy, xx = np.mgrid[0:h, 0:w]
+    base = np.stack([xx * 255 // max(w - 1, 1), yy * 255 // max(h - 1, 1),
+                     (xx + yy) * 255 // max(w + h - 2, 1)], -1).astype(np.int32)
+    im = np.clip(base + rng.randint(-40, 41, size=(h, w, 3)), 0, 255).astype(np.uint8)
+    im[h // 3:h // 3 + 3, :, :] = 255
+    im[:, w // 2:w // 2 + 2, :] = 0
+    return np.ascontiguousarray(im)
+
+
 def stats(name, arr):
     a = np.array(arr) * 1000.0
     print("  %-8s mean=%8.3f  median=%8.3f  std=%7.3f  min=%8.3f  max=%8.3f ms"
@@ -36,7 +49,9 @@ def stats(name, arr):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("inp")
+    ap.add_argument("inp", nargs="?", default=None, help="รูปหรือวิดีโอ (เว้นได้ถ้าใช้ --synth)")
+    ap.add_argument("--synth", default=None, metavar="WxH",
+                    help="สร้างเฟรมสังเคราะห์แทนไฟล์ — ใช้ตอนบอร์ดยังไม่มีรูป/คลิป")
     ap.add_argument("--modes", default=",".join(MODES))
     ap.add_argument("--iters", type=int, default=100)
     ap.add_argument("--warmup", type=int, default=10)
@@ -46,7 +61,13 @@ def main():
     ap.add_argument("--verify", action="store_true")
     args = ap.parse_args()
 
-    bgr = load_frame(args.inp)
+    if args.synth:
+        w, h = (int(v) for v in args.synth.split("x"))
+        bgr = synth_frame(w, h)
+    elif args.inp:
+        bgr = load_frame(args.inp)
+    else:
+        ap.error("ต้องใส่ไฟล์รูป/วิดีโอ หรือ --synth WxH อย่างใดอย่างหนึ่ง")
     if args.src:
         w, h = (int(v) for v in args.src.split("x"))
         bgr = cv2.resize(bgr, (w, h), interpolation=cv2.INTER_AREA)

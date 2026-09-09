@@ -93,11 +93,11 @@ def reference_cv2_u8(bgr):
 
 
 def synth_frame(w, h, seed):
-    rng = np.random.default_rng(seed)
+    rng = np.random.RandomState(seed)      # ไม่ใช้ default_rng — numpy เก่าบนบอร์ดอาจไม่มี
     yy, xx = np.mgrid[0:h, 0:w]
     base = np.stack([(xx * 255 // max(w - 1, 1)), (yy * 255 // max(h - 1, 1)),
                      ((xx + yy) * 255 // max(w + h - 2, 1))], -1).astype(np.int32)
-    noise = rng.integers(-40, 41, size=(h, w, 3))
+    noise = rng.randint(-40, 41, size=(h, w, 3))
     im = np.clip(base + noise, 0, 255).astype(np.uint8)
     # แถบขาวดำคม ๆ ให้ interpolation ทำงานหนัก
     im[h // 3:h // 3 + 3, :, :] = 255

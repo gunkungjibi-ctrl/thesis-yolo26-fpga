@@ -4,10 +4,12 @@
 
 | Stage | ต้องมีอะไร | ได้อะไร | เวลาโดยประมาณ |
 |---|---|---|---|
-| **A** | บอร์ด + Python/cv2 | ✅ พิสูจน์ว่าสูตร HW ตรงกับ **cv2 บน ARM NEON** จริง (ก่อนลงทุน synth) | ~5 นาที |
-| **B** | บอร์ด | ✅ ตัวเลข preproc จริงบน A53: `numpy` vs `lut` | ~2 นาที |
-| **C** | บอร์ด + DPU + xmodel | ✅ e2e FPS ใหม่ + ยืนยัน **COUNT ยัง 215** | ~15 นาที |
+| **A** | บอร์ด + Python/cv2 — **ไม่ต้องมีไฟล์สื่อ** | ✅ พิสูจน์ว่าสูตร HW ตรงกับ **cv2 บน ARM NEON** จริง (ก่อนลงทุน synth) | ~5 นาที |
+| **B** | บอร์ด — **ไม่ต้องมีไฟล์สื่อ** | ✅ ตัวเลข preproc จริงบน A53: `numpy` vs `lut` | ~2 นาที |
+| **C** | บอร์ด + DPU + `.xmodel` + คลิป (ต้องโอนจาก PC) | ✅ e2e FPS ใหม่ + ยืนยัน **COUNT ยัง 215** | ~30 นาที |
 | **D** | เครื่องที่มี Vitis 2022.2 | ⏳ bitstream + โหมด `hw` | เป็นวัน |
+
+**Stage A + B รันจากมือถือได้ล้วนๆ** (SSH + `wget` จาก GitHub — ดูข้อ 0B) ไม่ต้องมี PC เลย
 
 > **Stage A คือด่านที่สำคัญที่สุด** — ที่ verify ไว้ตอนออกแบบเป็น OpenCV บน **x86 SIMD**
 > ถ้า OpenCV ของบอร์ด (ARM/NEON, คนละเวอร์ชัน) ให้ค่าต่างแม้ 1 LSB สเปกของ kernel ต้องแก้
@@ -15,7 +17,9 @@
 
 ---
 
-## 0. โอนไฟล์ขึ้นบอร์ด
+## 0. เอาสคริปต์ขึ้นบอร์ด — เลือกทางใดทางหนึ่ง
+
+### 0A — มี PC ที่มี repo (ทางปกติ)
 
 PetaLinux starter kit ไม่มี `sftp-server` → `scp` ใช้ไม่ได้ ใช้ HTTP เหมือนเดิม (M9)
 
@@ -28,21 +32,47 @@ ip addr | grep 'inet '              # จด IP (คราวก่อนคื�
 ```
 
 ```bash
-# ---- บนบอร์ด (serial / console) ----
-cd /tmp
-wget http://<HOST_IP>:8000/m13_board.tar.gz
-tar xzf m13_board.tar.gz && cd m13
-ls
+# ---- บนบอร์ด ----
+cd /tmp && wget http://<HOST_IP>:8000/m13_board.tar.gz && tar xzf m13_board.tar.gz && cd m13
 ```
 
-ต้องมีไฟล์ที่ต้องใช้เพิ่มบนบอร์ด (ถ้ายังไม่มีจากรอบก่อน — โอนวิธีเดียวกัน):
-- `yolov8n_pkg_kv260.xmodel` (โมเดลที่ใช้วัดผลทั้งหมด)
-- รูปเทส 1 รูป เช่น `test.jpg`
-- `clip_600s_gt215.mp4` (สำหรับ Stage C ข้อ 2 — ไฟล์ 30 MB)
+### 0B — ไม่มี PC (คุมบอร์ดจากมือถือ) — `wget` จาก GitHub ตรงๆ ⭐
 
-เช็กสภาพแวดล้อมก่อน:
+repo เป็น **public** → บอร์ดโหลดเองได้ ไม่ต้องมีเครื่องกลาง ไม่ต้องใช้ token
+**paste ก้อนนี้ทั้งก้อนลง SSH ได้เลย** (ต้องการแค่บอร์ดออกอินเทอร์เน็ตได้)
+
+```sh
+mkdir -p /tmp/m13 && cd /tmp/m13
+B=claude/accelerator-test-apuc1z
+R=https://raw.githubusercontent.com/gunkungjibi-ctrl/thesis-yolo26-fpga/$B
+for f in 04-deploy/pl-preproc/host/preproc_tables.py \
+         04-deploy/pl-preproc/golden/preproc_golden.py \
+         04-deploy/board/preproc_lib.py \
+         04-deploy/board/bench_preproc.py \
+         04-deploy/board/bench_latency.py \
+         04-deploy/board/video_detect.py ; do
+  wget -q "$R/$f" -O "$(basename $f)" || echo "FAIL $f"
+done
+ls -l
+```
+
+> วางแบนแบบนี้ได้เพราะ `preproc_golden.py` หา `preproc_tables.py` ในโฟลเดอร์ตัวเองด้วย
+> ถ้า `wget` ฟ้อง certificate (CA bundle ของ image เก่า) เติม `--no-check-certificate`
+> — ยอมรับได้เพราะเป็น repo สาธารณะของเราเองบน LAN แต่อย่าใช้เป็นนิสัยกับ URL อื่น
+> ถ้าบอร์ดออกเน็ตไม่ได้ (`wget -q --spider https://github.com` ไม่ผ่าน) → ต้องใช้ 0A
+
+### ไฟล์สื่อ/โมเดล (ต้องมีเฉพาะ Stage C)
+
+`.xmodel` และ `.mp4` **ไม่ได้อยู่ใน git** (ติด `.gitignore`) และ `/tmp` หายทุกครั้งที่รีบูต
+→ Stage C ต้องโอนจาก PC เท่านั้น ส่วน **Stage A/B รันได้โดยไม่ต้องมีไฟล์พวกนี้เลย**
+
+- `yolov8n_pkg_kv260.xmodel` · `clip_600s_gt215.mp4` (30 MB) · `test.jpg`
+
+### เช็กสภาพแวดล้อมก่อนเริ่ม
+
 ```bash
 python3 -c "import numpy, cv2; print('numpy', numpy.__version__, '| cv2', cv2.__version__)"
+uname -m        # ต้องได้ aarch64
 ```
 
 ---
@@ -54,6 +84,9 @@ python3 -c "import numpy, cv2; print('numpy', numpy.__version__, '| cv2', cv2.__
 ```bash
 cd /tmp/m13
 
+# A0: ⭐ ไม่ต้องมีไฟล์อะไรเลย (สร้างเฟรมเอง) — ทำข้อนี้ก่อนเสมอ
+python3 preproc_golden.py check --sizes 640x360,640x640,1280x720,1920x1080 --n 2
+
 # A1: รูปจริงจาก valid set (ถ้าโอนขึ้นมา) หรือรูปเทสรูปเดียวก็ได้
 python3 preproc_golden.py sweep test.jpg
 
@@ -64,7 +97,7 @@ python3 preproc_golden.py sweep clip_600s_gt215.mp4 --n 30 --stride 200
 python3 preproc_golden.py sweep clip_600s_gt215.mp4 --n 10 --stride 500 --src 1920x1080
 ```
 
-**ผลที่ต้องได้:**
+**ผลที่ต้องได้** — A0 ต้องปิดท้ายด้วย `worst ... = 0` และคอลัมน์ `simd int8 (deploy)` ต้องเป็น `0/1228800 max=0` ทุกแถว (คอลัมน์ `scalar u8` มิสเยอะเป็นเรื่องปกติ — เป็นสูตรที่ *ไม่ได้* ใช้) · A1–A3 ต้องได้:
 ```
 [sweep] 30 frames, src 640x360, cv2 4.x.x (aarch64)
 [sweep] int8 mismatches 0 / 36864000 (0.000000%), max|diff|=0  -> PASS
@@ -84,6 +117,9 @@ python3 preproc_golden.py sweep clip_600s_gt215.mp4 --n 10 --stride 500 --src 19
 
 ```bash
 cd /tmp/m13
+
+# B0: ⭐ ไม่ต้องมีไฟล์อะไรเลย — ขนาด 640x640 เท่ากับที่ M12 วัดไว้
+python3 bench_preproc.py --synth 640x640 --modes numpy,lut --verify --iters 50
 
 # B1: ขนาดเดียวกับที่ M12 วัดไว้ (รูป valid set 640x640) — เทียบกับ 49.7 ms เดิมได้ตรงๆ
 python3 bench_preproc.py test.jpg --modes numpy,lut --verify --iters 50
@@ -166,11 +202,13 @@ python3 video_detect.py yolov8n_pkg_kv260.xmodel clip_600s_gt215.mp4 out.avi \
 ```
 === Stage A ===
 cv2 version / arch บนบอร์ด :
+A0 synthetic 4 ขนาด        :  worst ____ (ต้อง 0)         PASS/FAIL
 A1 test.jpg                :  mismatches ____ / ____  max ____  PASS/FAIL
 A2 clip 640x360 (30 เฟรม)  :  mismatches ____ / ____  max ____  PASS/FAIL
 A3 1920x1080 (10 เฟรม)     :  mismatches ____ / ____  max ____  PASS/FAIL
 
 === Stage B ===              numpy (ms)   lut (ms)   speedup   verify
+B0 synth 640x640           :  ______      ______     ______x   OK/FAIL
 B1 640x640                 :  ______      ______     ______x   OK/FAIL
 B2 640x360                 :  ______      ______     ______x   OK/FAIL
 B3 1920x1080               :  ______      ______     ______x   OK/FAIL
