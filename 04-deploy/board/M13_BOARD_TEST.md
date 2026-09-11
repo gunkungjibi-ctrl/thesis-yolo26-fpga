@@ -11,6 +11,21 @@
 
 **Stage A + B รันจากมือถือได้ล้วนๆ** (SSH + `wget` จาก GitHub — ดูข้อ 0B) ไม่ต้องมี PC เลย
 
+---
+
+## ⚡ ทางลัด — คำสั่งเดียวจบ Stage A + B
+
+ถ้าไม่อยากไล่ทีละขั้น (โดยเฉพาะตอนพิมพ์บนมือถือ) `m13_quickstart.sh` ทำให้ครบตั้งแต่
+เช็ค env → เช็คเน็ต → โหลดสคริปต์ → รัน Stage A0 + B0 → สรุปผล
+
+```sh
+wget -O m13.sh https://raw.githubusercontent.com/gunkungjibi-ctrl/thesis-yolo26-fpga/claude/accelerator-test-apuc1z/04-deploy/board/m13_quickstart.sh
+sh m13.sh
+```
+
+แล้วก๊อป output ทั้งหมดส่งกลับมา · ถ้ามันฟ้องตรงไหน สคริปต์จะบอกคำสั่งแก้ให้เอง
+(เขียนด้วย POSIX sh ล้วน — busybox ash ของ PetaLinux รันได้ · ไม่ต้องมีไฟล์สื่อบนบอร์ด)
+
 > **Stage A คือด่านที่สำคัญที่สุด** — ที่ verify ไว้ตอนออกแบบเป็น OpenCV บน **x86 SIMD**
 > ถ้า OpenCV ของบอร์ด (ARM/NEON, คนละเวอร์ชัน) ให้ค่าต่างแม้ 1 LSB สเปกของ kernel ต้องแก้
 > **ก่อน** จะเสียเวลา synth ทั้งวัน → เทสนี้ราคาถูกมากแต่กันงานเสียเปล่าได้เยอะ
