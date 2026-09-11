@@ -1,6 +1,6 @@
 # Timeline / Milestones
 
-อัปเดต 5 ก.ย. 2026
+อัปเดต 11 ก.ย. 2026
 
 > 🔗 **ไฟล์นี้ = single source of truth ของสถานะโปรเจค.** `00-admin/dashboard.html` ถูก generate จากตารางในไฟล์นี้ — แก้สถานะที่นี่ที่เดียว แล้วบอก Claude ว่า **"sync dashboard"** เพื่ออัปเดตแดชบอร์ดให้ตรงกัน (กติกาแปลงสถานะ: ✅ = เสร็จ · `ติดบล็อก?`=ใช่ → กลุ่มติดบล็อก · นอกนั้น = ทำได้เลย)
 
@@ -13,7 +13,8 @@
 - **ระบบหลัก (KV260) ทำงานครบวงจรบนบอร์ดจริงแล้ว** และเก็บผลวัดครบ 4 หมวด: accuracy / latency / power / counting
 - **โจทย์หลักผ่าน:** นับกล่องบนคลิป 600 วินาที ได้ **215/215 = error 0.0%** เทียบ ground truth
 - **M2-B3 เสร็จแล้ว (2026-09-05)** — YOLO26n compile ไม่ผ่าน แต่รู้สาเหตุระดับ op เป๊ะ (attention scale-multiply) → ปิดคำถามวิจัย Track B
-- เหลือ **M14** (finalize รายงาน) · M13 optional
+- **M13 เสร็จแล้ว (2026-09-11)** — preproc **44.4 → 3.7 ms (12.1×)** ด้วยซอฟต์แวร์ล้วน (bit-exact) ⇒ e2e คาด **12.8 → ~31 FPS** · และพิสูจน์ว่า **ไม่ต้องทำ custom accelerator** (จะเพิ่มได้อีกแค่ ~11%)
+- เหลือ **M14** (finalize รายงาน) เป็นงานหลักชิ้นเดียว
 
 ### ตัวเลขผลการทดลองที่ได้แล้ว
 
@@ -25,7 +26,8 @@
 | Throughput — e2e app | 12.8 FPS (78.3 ms/เฟรม) |
 | Power | DPU-saturated 9.27 W @ **9.67 FPS/W** · แอปวิดีโอจริง 5.10 W @ 1.99 FPS/W |
 | เทียบ GPU baseline | GPU ดีสุด 4.51 FPS/W @ 58.5 W → FPGA **ดีกว่า 2.1×** และกินไฟ **น้อยกว่า 6.3×** |
-| Bottleneck | **PS-bound** — preproc 49.7 ms (63%) · DPU 12.5 ms (16%) · decode+NMS 16.1 ms (21%) |
+| Bottleneck (เดิม) | **PS-bound** — preproc 49.7 ms (63%) · DPU 12.5 ms (16%) · decode+NMS 16.1 ms (21%) |
+| Bottleneck (หลัง M13) | preproc **3.7 ms (11%)** · DPU 12.5 ms (39%) · **decode+NMS 16.1 ms (50%) ← เป้าถัดไป** |
 | Counting | GT = 215 → นับได้ **215 (0.0% error)** · robust ที่ line 0.3–0.4×W, max_dist 40–60 |
 
 ---
@@ -58,7 +60,7 @@
 | # | งาน | เกณฑ์ผ่าน | ติดบล็อก? | สถานะ |
 |---|---|---|---|---|
 | M14 | รายงาน + สไลด์ป้องกัน | ส่งครบ | ไม่ | 🟡 **กำลังทำ — งานหลักที่เหลืออยู่ตอนนี้** — ร่างบท Results เสร็จ (`RESULTS_chapter_draft.md`, 6 ตาราง) + ชุดเอกสารอาจารย์ `00-admin/advisor-brief/` (12 ไฟล์) เสร็จ · เหลือ ขัดสำนวน + ใส่รูป + บทอื่นๆ ของเล่ม + เขียนผล M2-B3 เข้าบท Track B |
-| M13 | (Optional) custom accelerator / optimize preprocessing | speedup วัดได้เทียบ baseline | ไม่ | 🟡 **optional — ไม่ผูกเป็นเงื่อนไขจบ** · **7 ก.ย.: ออกแบบ + verify บน host เสร็จ** (ขั้นถัดไปต้องมี Vitis 2022.2 สำหรับ synth + บอร์ดสำหรับวัด) — `04-deploy/pl-preproc/` HLS kernel (resize+BGR→RGB+quantize ใน PL) **bit-exact กับ cv2 0 mismatch** (57 รูป × 3 ขนาด, C testbench 8 เคสผ่าน) + host lib XRT + `--preproc numpy/lut/hw` ในสคริปต์วัด · **ค้นพบ:** 49.7 ms ส่วนใหญ่คือ numpy float path ไม่ใช่ resize → โหมด `lut` (SW) เร็วขึ้น 8.7× บน x86 โดยไม่แตะ PL → M13 ต้องวัด 3 จุด numpy/lut/hw · **เหลือ:** csynth/bitstream บนเครื่องที่มี Vitis + วัดจริงบนบอร์ด (เกณฑ์: COUNT ยัง 215, FPS ขึ้น) |
+| M13 | (Optional) custom accelerator / optimize preprocessing | speedup วัดได้เทียบ baseline | ไม่ | ✅ **ได้ speedup แล้ว — และได้ข้อสรุปว่า "ไม่ต้องทำ HW"** · **11 ก.ย. วัดบนบอร์ดจริง** (`m13_quickstart.sh`, cv2 4.5.2/aarch64) ผลเต็ม `05-benchmarks/results/kv260_results.md` หัวข้อ (E) · **Stage A0 ผ่าน:** golden model bit-exact กับ cv2 ของบอร์ด **0 mismatch** ทั้ง 4 ขนาด ⇒ สเปก HLS kernel ถูกต้องสำหรับ ARM ด้วย (เดิม verify แค่ x86) · **Stage B0 ผ่าน:** preproc **44.36 → 3.65 ms (12.1×)** ที่ 640×640 · **53.88 → 6.73 ms (8.0×)** ที่ 640×360 ผลตรงกับโค้ดเดิมทุกไบต์ ⇒ e2e คาด **12.77 → ~31 FPS (+143%)** · **ข้อค้นพบชี้ขาด:** 49.7 ms เดิม ~90% คือ numpy float path (temporary float32 4.9 MB หลายก้อน ชน memory bandwidth ของ A53) **ไม่ใช่ resize** (resize จริง ~3.1 ms) → **PL accelerator เพิ่มได้อีกแค่ ~11% จึงไม่คุ้มจะ synth** · คอขวดใหม่ = **decode+NMS 16.07 ms (50%)** · **เหลือ:** Stage C ยืนยัน COUNT=215 + e2e/power จริง (ต้องมี `.xmodel` + คลิป โอนจาก PC) |
 
 ## หมายเหตุ
 

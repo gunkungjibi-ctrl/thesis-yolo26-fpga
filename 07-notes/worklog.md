@@ -176,3 +176,19 @@ user เอา `.pt`/`.onnx` ทั้งหมด (ใหญ่สุด 13MB) 
 - **ยังไม่ได้ทำ (ต้องมี tool/บอร์ด):** `vitis_hls -f run_hls.tcl` (csynth/timing/resource) → link เข้า overlay `kv260-benchmark-b4096` ผ่าน kria-vitis-platforms (`vitis/preproc_link.cfg`, ห้ามแก้ dpu_conf.vh ให้ fingerprint เดิม) → firmware app ใหม่ → build `.so` บนบอร์ด → วัด `bench_preproc.py --verify` + `video_detect.py --preproc hw` (COUNT ต้องยัง 215)
 - **เตรียมชุดเทสบนบอร์ด** (`04-deploy/board/M13_BOARD_TEST.md` + `make_board_bundle.sh`) แบ่ง 4 stage: A = golden vs cv2 **ของบอร์ด** (ตรวจว่าสูตรที่ reverse จาก x86 SIMD ตรงกับ ARM NEON ด้วย — ด่านที่ต้องผ่านก่อนลงทุน synth), B = วัด numpy vs lut บน A53, C = e2e + COUNT ต้องยัง 215, D = โหมด hw (รอ Vitis)
 - ปรับให้รันบนบอร์ดสะดวก: golden model vectorize horizontal pass (เดิม loop ต่อแถว ช้าบน A53), `sweep` รับไฟล์วิดีโอ + ใช้ขนาดเฟรมจริงได้ (`--stride` กระจายเฟรม), import แบบ flat dir ได้, `bench_preproc --verify` ใช้ numpy เป็น reference เสมอและ exit non-zero เมื่อ FAIL
+
+## 2026-09-11 — M13 วัดบนบอร์ดจริง: ได้ speedup 12× ด้วยซอฟต์แวร์ล้วน และ **ปิดคำถามว่าไม่ต้องทำ HW**
+
+user รัน `m13_quickstart.sh` บนบอร์ด (SSH จากมือถือ) — env: PetaLinux 2022.2, kernel 5.15.36-xilinx, Python 3.9.9, numpy 1.21.2, **cv2 4.5.2 aarch64**. ผลเต็ม: `05-benchmarks/results/kv260_results.md` หัวข้อ (E)
+
+- **Stage A0 ผ่าน — ด่านสำคัญที่สุดของงานนี้:** golden model ที่ reverse สูตร `resize.cpp` มาจาก **x86 SIMD (cv2 5.0.0)** ให้ผล **bit-exact กับ cv2 4.5.2 บน ARM NEON ด้วย** — 0 mismatch ทั้ง 4 ขนาด (640×360 / 640×640 / 1280×720 / 1920×1080) ⇒ สเปก HLS kernel ถูกต้องสำหรับเป้าหมายจริง
+  - คอลัมน์ `scalar` ยืนยันข้ามสถาปัตยกรรมด้วยว่าสูตร "ตามตำรา" พลาด ~10% ของพิกเซล (±1 LSB) บน ARM เหมือนกัน → การไปดู path SIMD จริงใน `resize.cpp` ไม่ได้เป็นรายละเอียดของ x86 อย่างเดียว
+- **Stage B0 ผ่าน:** `numpy` → `lut` ได้ **44.36 → 3.65 ms (12.1×)** ที่ 640×640 และ **53.88 → 6.73 ms (8.0×)** ที่ 640×360 โดย `--verify` = **0 mismatch ทั้งสองขนาด** ⇒ สลับได้เลยโดยไม่ต้องวัด mAP ใหม่
+- **ข้อค้นพบชี้ขาด (E3):** ทั้งสองโหมดใช้ `cv2.resize`+`cvtColor` ชุดเดียวกัน ต่างแค่ขั้น quantize → ส่วนต่าง 41–47 ms **คือต้นทุนของ numpy float path ล้วน ๆ** ส่วน resize จริงแค่ ~3.1 ms
+  → **"preproc 49.7 ms" ที่ M12 รายงาน ~90% ไม่ใช่ resize แต่เป็น float path** ที่สร้าง temporary `float32` 4.9 MB หลายก้อนจนชน memory bandwidth ของ A53 (แคชเล็ก)
+  → คำอธิบายเดิมในบรีฟที่ว่า "ARM ทำทีละค่าไม่ได้ใช้ SIMD เต็มที่" **ไม่ตรงกับสาเหตุจริง** ต้องแก้ตอนเขียนเล่ม
+- **ผลต่อการตัดสินใจ M13:** e2e คาด 78.31 → 32.21 ms = **12.77 → ~31 FPS (+143%)** ด้วยการแก้โค้ด ~10 บรรทัด
+  PL accelerator (ประมาณ ~3 ms) จะเพิ่มได้อีกแค่ **~11%** แลกกับ synth+bitstream+firmware app → **ตัดสินใจไม่ทำต่อ** เขียน rationale ไว้ใน `04-deploy/pl-preproc/README.md` ข้อ 5
+  คอขวดใหม่ = **decode+NMS 16.07 ms (50% ของ pipeline ใหม่)** = เป้า optimize ที่ถูกต้องถัดไป
+- **งานออกแบบ kernel ไม่สูญเปล่า:** ได้ (1) วิธี verify bit-exact กับ cv2 ข้ามสถาปัตยกรรม ใช้ซ้ำได้ (2) ข้อค้นพบ E3 ซึ่งมาจากการทำ golden model นี่เอง และเป็นตัวที่บอกว่าไม่ต้องทำ HW (3) สเปกพร้อม synth ถ้าวันหลังต้องรับ MIPI เข้า PL ตรง
+- **ขั้นต่อไป:** Stage C บนบอร์ด (ต้องโอน `.xmodel` + `clip_600s_gt215.mp4` จาก PC เพราะติด `.gitignore`) — `bench_latency --preproc lut` ยืนยัน e2e จริง + `video_detect --preproc lut` ต้องได้ **COUNT=215** เท่าเดิม แล้วเก็บ power/FPS-per-W จุดใหม่
